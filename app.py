@@ -1,10 +1,10 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="🏎️ Python Racer Multiplayer", page_icon="🏎️", layout="centered")
+st.set_page_config(page_title="🏀 Hoop Shootout Multiplayer", page_icon="🏀", layout="centered")
 
-st.title("🏎️ Python Racer — Multiplayer")
-st.caption("Up to 5 players over peer-to-peer • Live leaderboard • Works on mobile")
+st.title("🏀 Hoop Shootout — Multiplayer")
+st.caption("Up to 5 players over peer-to-peer • Turn-based free throws • Live leaderboard • Mobile friendly")
 
 html_game = r"""
 <!DOCTYPE html>
@@ -12,129 +12,125 @@ html_game = r"""
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>Python Racer Multiplayer</title>
+<title>Hoop Shootout Multiplayer</title>
 <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 <style>
     * { box-sizing: border-box; }
-    body {
+    html, body {
         font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
         background-color: #0e1117;
         color: #ffffff;
+        margin: 0;
+        padding: 0;
+        -webkit-tap-highlight-color: transparent;
+    }
+    body {
         display: flex;
         flex-direction: column;
         align-items: center;
-        margin: 0;
         padding: 8px;
-        overflow-x: hidden;
-        -webkit-tap-highlight-color: transparent;
     }
-    .app-wrap { width: 100%; max-width: 640px; display: flex; flex-direction: column; align-items: center; }
+    .app-wrap { width: 100%; max-width: 480px; display: flex; flex-direction: column; align-items: center; }
 
     .lobby-panel {
         background-color: #16213e;
-        padding: 14px 16px;
+        padding: 12px 14px;
         border-radius: 10px;
-        margin-bottom: 10px;
+        margin-bottom: 8px;
         box-shadow: 0 4px 8px rgba(0,0,0,0.3);
         width: 100%;
     }
     .lobby-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 8px; justify-content: center; }
-    .lobby-panel label { font-size: 0.8em; color: #a2a8d3; display: block; margin-bottom: 4px; }
+    .lobby-panel label { font-size: 0.78em; color: #a2a8d3; display: block; margin-bottom: 3px; }
     .lobby-panel input {
-        padding: 9px 10px;
+        padding: 8px 10px;
         border-radius: 6px;
         border: 1px solid #0f3460;
         background: #0e1117;
         color: #fff;
-        font-size: 0.95em;
+        font-size: 0.9em;
         min-width: 0;
     }
-    #name-input { width: 140px; text-transform: none; }
-    #join-id-input { width: 120px; text-transform: uppercase; }
+    #name-input { width: 130px; }
+    #join-id-input { width: 115px; text-transform: uppercase; }
     button {
-        padding: 10px 14px;
+        padding: 9px 12px;
         background-color: #e94560;
         color: white;
         border: none;
         border-radius: 6px;
         cursor: pointer;
         font-weight: bold;
-        font-size: 0.9em;
+        font-size: 0.85em;
         touch-action: manipulation;
     }
     button:hover, button:active { background-color: #0f3460; }
     .start-btn { background-color: #28a745 !important; }
     .start-btn:hover { background-color: #1e7e34 !important; }
-    #room-code-box { text-align: center; margin-bottom: 4px; }
-    #my-peer-id { color: #00fff5; font-weight: bold; font-size: 1.05em; letter-spacing: 1px; }
-    #copy-btn { padding: 4px 8px; font-size: 0.75em; margin-left: 6px; }
-    #status-msg { margin-top: 8px; font-weight: bold; color: #f9d56e; font-size: 0.85em; text-align: center; }
-    #player-chips { display: flex; flex-wrap: wrap; gap: 6px; justify-content: center; margin-top: 8px; }
-    .chip { padding: 3px 9px; border-radius: 12px; font-size: 0.78em; font-weight: bold; color: #0e1117; }
+    #room-code-box { text-align: center; margin-bottom: 2px; }
+    #my-peer-id { color: #00fff5; font-weight: bold; font-size: 1em; letter-spacing: 1px; }
+    #copy-btn { padding: 3px 7px; font-size: 0.72em; margin-left: 6px; }
+    #status-msg { margin-top: 6px; font-weight: bold; color: #f9d56e; font-size: 0.8em; text-align: center; }
+    #player-chips { display: flex; flex-wrap: wrap; gap: 5px; justify-content: center; margin-top: 6px; }
+    .chip { padding: 2px 8px; border-radius: 10px; font-size: 0.74em; font-weight: bold; color: #0e1117; }
 
-    .canvas-wrap { width: 100%; max-width: 600px; display: flex; justify-content: center; }
+    .canvas-wrap { width: 100%; max-width: 440px; display: flex; justify-content: center; }
     #gameCanvas {
         border: 4px solid #0f3460;
-        background-color: #2d2d2d;
+        background-color: #1b2a4a;
         border-radius: 8px;
         display: block;
         width: 100%;
-        max-width: 600px;
+        max-width: 440px;
         height: auto;
         touch-action: none;
     }
 
-    .touch-controls {
-        display: flex;
-        gap: 10px;
+    #shoot-btn {
         width: 100%;
-        max-width: 600px;
-        margin-top: 10px;
-        justify-content: center;
-    }
-    .touch-btn {
-        flex: 1;
-        max-width: 140px;
-        padding: 18px 0;
-        font-size: 1.6em;
-        background-color: #16213e;
-        border: 2px solid #0f3460;
+        max-width: 440px;
+        margin-top: 8px;
+        padding: 16px 0;
+        font-size: 1.15em;
+        background-color: #ff5500;
         border-radius: 10px;
+        letter-spacing: 1px;
+        text-align: center;
+        font-weight: bold;
+        touch-action: manipulation;
         user-select: none;
-        touch-action: none;
     }
-    .touch-btn:active, .touch-btn.pressed { background-color: #e94560; }
-    #boost-btn { background-color: #16213e; border-color: #ff5500; }
-    #boost-btn:active, #boost-btn.pressed { background-color: #ff5500; }
+    #shoot-btn.disabled { background-color: #2a2f45; color: #6b7280; cursor: default; }
+    #shoot-btn:active:not(.disabled) { background-color: #cc4400; }
 
-    .controls-info { margin-top: 8px; font-size: 0.8em; color: #a2a8d3; text-align: center; max-width: 560px; }
+    .controls-info { margin-top: 6px; font-size: 0.75em; color: #a2a8d3; text-align: center; max-width: 440px; }
 
     .boards-wrap {
         display: flex;
         flex-wrap: wrap;
-        gap: 10px;
+        gap: 8px;
         width: 100%;
-        max-width: 600px;
-        margin-top: 12px;
+        max-width: 440px;
+        margin-top: 10px;
+        margin-bottom: 4px;
     }
     .board {
         flex: 1;
-        min-width: 220px;
+        min-width: 190px;
         background-color: #16213e;
         border-radius: 8px;
-        padding: 10px 14px;
+        padding: 8px 12px;
         box-shadow: 0 4px 8px rgba(0,0,0,0.25);
     }
-    .board h3 { margin: 0 0 6px 0; font-size: 0.95em; color: #00fff5; }
-    .board-row { display: flex; justify-content: space-between; font-size: 0.85em; padding: 3px 0; border-bottom: 1px solid #0f3460; }
+    .board h3 { margin: 0 0 5px 0; font-size: 0.88em; color: #00fff5; }
+    .board-row { display: flex; justify-content: space-between; font-size: 0.8em; padding: 2px 0; border-bottom: 1px solid #0f3460; }
     .board-row:last-child { border-bottom: none; }
-    .board-empty { font-size: 0.8em; color: #6b7280; }
+    .board-empty { font-size: 0.75em; color: #6b7280; }
 
-    @media (max-width: 420px) {
-        .lobby-panel { padding: 10px; }
-        #name-input, #join-id-input { width: 105px; font-size: 0.85em; }
-        button { padding: 9px 10px; font-size: 0.82em; }
-        .touch-btn { font-size: 1.3em; padding: 14px 0; }
+    @media (max-width: 400px) {
+        .lobby-panel { padding: 9px; }
+        #name-input, #join-id-input { width: 95px; font-size: 0.8em; }
+        button { padding: 8px 9px; font-size: 0.78em; }
     }
 </style>
 </head>
@@ -143,7 +139,7 @@ html_game = r"""
 
     <div class="lobby-panel">
         <div id="room-code-box">
-            <span style="font-size:0.8em;color:#a2a8d3;">Your Room Code:</span><br>
+            <span style="font-size:0.78em;color:#a2a8d3;">Your Room Code:</span><br>
             <span id="my-peer-id">Generating...</span>
             <button id="copy-btn" onclick="copyRoomCode()">Copy</button>
         </div>
@@ -151,7 +147,7 @@ html_game = r"""
         <div class="lobby-row">
             <div>
                 <label for="name-input">Your name</label>
-                <input type="text" id="name-input" placeholder="Racer" maxlength="10" value="Racer">
+                <input type="text" id="name-input" placeholder="Baller" maxlength="10" value="Baller">
             </div>
         </div>
 
@@ -164,7 +160,7 @@ html_game = r"""
             <button onclick="connectToPeer()">Join Room</button>
         </div>
         <div class="lobby-row">
-            <button id="start-race-btn" class="start-btn" style="display:none;" onclick="hostStartRace()">🏁 Start Race for Everyone</button>
+            <button id="start-race-btn" class="start-btn" style="display:none;" onclick="hostStartGame()">🏀 Start Game</button>
         </div>
 
         <div id="status-msg">Enter your name, then play solo or host/join a P2P room.</div>
@@ -172,27 +168,23 @@ html_game = r"""
     </div>
 
     <div class="canvas-wrap">
-        <canvas id="gameCanvas" width="600" height="700"></canvas>
+        <canvas id="gameCanvas" width="440" height="540"></canvas>
     </div>
 
-    <div class="touch-controls">
-        <div class="touch-btn" id="left-btn">◀</div>
-        <div class="touch-btn" id="boost-btn">🚀</div>
-        <div class="touch-btn" id="right-btn">▶</div>
-    </div>
+    <div id="shoot-btn" class="disabled">🏀 SHOOT</div>
 
     <div class="controls-info">
-        🕹️ Arrow keys / A-D to steer, Up / W to boost — or use the on-screen buttons on mobile.<br>
-        🔄 Tap the screen or press Space to restart after a crash.
+        Tap <strong>SHOOT</strong> (or press Space) when the power meter is in the bright zone.
+        Too weak = short, too strong = long!
     </div>
 
     <div class="boards-wrap">
         <div class="board">
-            <h3>🏁 Live Leaderboard</h3>
-            <div id="live-board"><div class="board-empty">Start a race to see scores</div></div>
+            <h3>🏆 Final Results</h3>
+            <div id="live-board"><div class="board-empty">Start a game to see scores</div></div>
         </div>
         <div class="board">
-            <h3>🏆 Local Best Scores</h3>
+            <h3>⭐ Local Best Scores</h3>
             <div id="best-board"><div class="board-empty">No scores yet on this device</div></div>
         </div>
     </div>
@@ -200,55 +192,62 @@ html_game = r"""
 </div>
 
 <script>
+    // ---------- AUTO-RESIZE THE STREAMLIT IFRAME TO FIT CONTENT (fixes clipped/scrolling layout) ----------
+    function reportHeight() {
+        const h = document.documentElement.scrollHeight + 12;
+        window.parent.postMessage({ type: "streamlit:setFrameHeight", height: h }, "*");
+    }
+    window.addEventListener('load', reportHeight);
+    window.addEventListener('resize', reportHeight);
+    setInterval(reportHeight, 800);
+    if (window.ResizeObserver) { new ResizeObserver(reportHeight).observe(document.body); }
+
+    // ---------- SETUP ----------
     const canvas = document.getElementById("gameCanvas");
     const ctx = canvas.getContext("2d");
-
-    const LOGICAL_W = 600, LOGICAL_H = 700;
-    const lanes = [70, 185, 300, 415, 530];
-    const carWidth = 34, carHeight = 56;
+    const LOGICAL_W = 440, LOGICAL_H = 540;
     const MAX_PLAYERS = 5;
     const PALETTE = ["#00fff5", "#ff00ff", "#ffbe00", "#4dff4d", "#ff6b6b"];
-    const enemyColors = ["#ff0055", "#ffbe00", "#00ff66"];
 
-    let peer = null;
-    let myId = "";
-    let myName = "Racer";
-    let isOnline = false;
-    let isHost = false;
-    let connectTimeout = null;
+    const shooterX = 95, shooterY = 460;
+    const hoopX = 345, hoopY = 100;
+    const IDEAL_POWER = 72;               // sweet-spot on the 0-100 power meter
+    const hoopFrac = IDEAL_POWER / 100;
+    const extendedX = shooterX + (hoopX - shooterX) / hoopFrac;
+    const extendedY = shooterY + (hoopY - shooterY) / hoopFrac;
 
-    // Host-only: map of peerId -> DataConnection
-    let connections = {};
-    // Client-only: connection to host
-    let hostConn = null;
+    const TURN_TIME_MS = 6000, FLIGHT_MS = 650, RESULT_HOLD_MS = 850;
 
-    let gameStarted = false;
-    let gameOver = false;
-    let frameCount = 0;
-    let level = 1;
+    let peer = null, myId = "", myName = "Baller";
+    let isOnline = false, isHost = false, connectTimeout = null;
+    let connections = {};   // host-only: peerId -> conn
+    let hostConn = null;    // client-only
+
+    let players = {};        // id -> {id,name,color,score}
+    let turnOrder = [];
+    let currentTurnIdx = 0;
+    let roundsPerPlayer = 5;
+    let shotsTaken = {};
+
+    let matchState = 'lobby'; // lobby | aiming | flying | result | matchOver
+    let aimStartTime = 0;
+    let meterValue = 0;
+    let meterSpeed = 1.4;
+    let ball = { t: 0, startTime: 0, landingT: 0, resultText: '', resultColor: '', resultPts: 0, shooterId: null, resultShownAt: 0 };
     let scoreSaved = false;
 
-    // players keyed by id ("me" for solo, or peerId for online)
-    let players = {};
-    let laneAssignment = {}; // id -> lane index
-    let colorAssignment = {}; // id -> color
-
-    let enemies = [];
-    let coins = [];
-
-    function availableLanes() {
-        const used = Object.values(laneAssignment);
-        const free = [];
-        for (let i = 0; i < lanes.length; i++) if (!used.includes(i)) free.push(i);
-        return free;
-    }
     function availableColor() {
-        const used = Object.values(colorAssignment);
+        const used = Object.values(players).map(p => p.color);
         return PALETTE.find(c => !used.includes(c)) || PALETTE[0];
     }
+    function currentName() {
+        const v = document.getElementById('name-input').value.trim();
+        return v ? v.substring(0, 10) : "Baller";
+    }
+    function myKey() { return isOnline ? myId : 'me'; }
 
     function initPeer() {
-        const shortId = "RACE-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+        const shortId = "HOOP-" + Math.random().toString(36).substring(2, 6).toUpperCase();
         peer = new Peer(shortId, {
             debug: 1,
             config: {
@@ -270,17 +269,14 @@ html_game = r"""
             checkAutoJoinFromUrl();
         });
 
-        // Host receives incoming connections here
         peer.on('connection', (connection) => {
             if (!isHost) {
-                // Not hosting yet -- become host implicitly if someone connects
                 isHost = true;
                 isOnline = true;
                 registerSelfAsPlayer();
                 document.getElementById('start-race-btn').style.display = 'inline-block';
             }
-            const ids = availableLanes();
-            if (Object.keys(players).length >= MAX_PLAYERS || ids.length === 0) {
+            if (Object.keys(players).length >= MAX_PLAYERS) {
                 connection.on('open', () => connection.send({ type: 'room_full' }));
                 setTimeout(() => connection.close(), 300);
                 return;
@@ -300,7 +296,6 @@ html_game = r"""
         const room = params.get('room');
         if (room) document.getElementById('join-id-input').value = room.toUpperCase();
     }
-
     function copyRoomCode() {
         if (!myId) return;
         navigator.clipboard.writeText(myId).then(() => {
@@ -308,115 +303,102 @@ html_game = r"""
         }).catch(() => {});
     }
 
-    function currentName() {
-        const v = document.getElementById('name-input').value.trim();
-        return v ? v.substring(0, 10) : "Racer";
-    }
-
     function registerSelfAsPlayer() {
         myName = currentName();
-        laneAssignment[myId] = 2; // host takes center lane
-        colorAssignment[myId] = PALETTE[0];
-        players[myId] = { id: myId, name: myName, lane: 2, y: 580, color: PALETTE[0], score: 0, alive: true, boosting: false };
+        players[myId] = { id: myId, name: myName, color: PALETTE[0], score: 0 };
     }
 
-    // ---------- SOLO MODE ----------
+    // ---------- SOLO ----------
     function startSinglePlayer() {
         if (connectTimeout) clearTimeout(connectTimeout);
-        isOnline = false;
-        isHost = false;
+        isOnline = false; isHost = false;
         myName = currentName();
-        document.getElementById('status-msg').innerText = "🎮 Solo mode — good luck, " + myName + "!";
+        players = { me: { id: 'me', name: myName, color: PALETTE[0], score: 0 } };
         document.getElementById('start-race-btn').style.display = 'none';
-        players = { me: { id: 'me', name: myName, lane: 2, y: 580, color: PALETTE[0], score: 0, alive: true, boosting: false } };
-        resetRoundState();
-        gameStarted = true;
-        scoreSaved = false;
+        document.getElementById('status-msg').innerText = "🎮 Solo mode — 10 shots, good luck " + myName + "!";
+        beginMatch();
+        renderPlayerChips();
         document.activeElement && document.activeElement.blur();
     }
 
-    // ---------- HOST MODE ----------
+    // ---------- HOST ----------
     function hostMultiplayer() {
-        if (!myId) {
-            document.getElementById('status-msg').innerText = "⏳ Still generating your room code, try again in a second...";
-            return;
-        }
-        isOnline = true;
-        isHost = true;
-        laneAssignment = {};
-        colorAssignment = {};
+        if (!myId) { document.getElementById('status-msg').innerText = "⏳ Generating your room code, try again in a second..."; return; }
+        isOnline = true; isHost = true;
         registerSelfAsPlayer();
-        gameStarted = false;
-        gameOver = false;
+        matchState = 'lobby';
         document.getElementById('start-race-btn').style.display = 'inline-block';
-        document.getElementById('status-msg').innerText = "🌐 Hosting! Share code " + myId + " with friends, then hit Start Race.";
+        document.getElementById('status-msg').innerText = "🌐 Hosting! Share code " + myId + ", then hit Start Game.";
         renderPlayerChips();
     }
 
-    function hostStartRace() {
+    function hostStartGame() {
         if (!isHost) return;
-        resetRoundState();
-        gameStarted = true;
+        beginMatch();
+        document.getElementById('status-msg').innerText = "🏀 Game on!";
+    }
+
+    function beginMatch() {
+        roundsPerPlayer = Object.keys(players).length > 1 ? 5 : 10;
+        shotsTaken = {};
+        Object.keys(players).forEach(id => { shotsTaken[id] = 0; players[id].score = 0; });
+        turnOrder = Object.keys(players);
+        currentTurnIdx = 0;
+        matchState = 'aiming';
+        aimStartTime = performance.now();
+        meterSpeed = 1.3;
+        ball = { t: 0 };
         scoreSaved = false;
-        document.getElementById('status-msg').innerText = "🏁 Race started!";
+        document.getElementById('start-race-btn').innerText = '🏀 Start Game';
+        document.getElementById('live-board').innerHTML = '<div class="board-empty">Game in progress...</div>';
     }
 
     function setupHostSideConnection(conn) {
         conn.on('open', () => {
-            const freeLanes = availableLanes();
-            const lane = freeLanes.length ? freeLanes[0] : 0;
             const color = availableColor();
-            laneAssignment[conn.peer] = lane;
-            colorAssignment[conn.peer] = color;
-            players[conn.peer] = { id: conn.peer, name: 'Racer', lane: lane, y: 580, color: color, score: 0, alive: true, boosting: false };
+            players[conn.peer] = { id: conn.peer, name: 'Baller', color: color, score: 0 };
+            if (matchState !== 'lobby') { turnOrder.push(conn.peer); shotsTaken[conn.peer] = 0; }
             document.getElementById('status-msg').innerText = "🟢 A player connected! (" + Object.keys(players).length + "/" + MAX_PLAYERS + ")";
             renderPlayerChips();
         });
-
         conn.on('data', (data) => {
             const p = players[conn.peer];
             if (!p) return;
-            if (data.type === 'client_input') {
-                p.lane = data.lane;
-                p.boosting = data.boosting;
-                if (data.name) p.name = data.name;
+            if (data.type === 'client_input' && data.name) p.name = data.name;
+            if (data.type === 'shoot') {
+                if (matchState === 'aiming' && turnOrder[currentTurnIdx] === conn.peer) resolveShot();
             }
         });
-
         conn.on('close', () => {
+            const idx = turnOrder.indexOf(conn.peer);
+            if (idx !== -1) {
+                turnOrder.splice(idx, 1);
+                if (idx <= currentTurnIdx && currentTurnIdx > 0) currentTurnIdx--;
+            }
             delete players[conn.peer];
             delete connections[conn.peer];
-            delete laneAssignment[conn.peer];
-            delete colorAssignment[conn.peer];
+            delete shotsTaken[conn.peer];
             renderPlayerChips();
             document.getElementById('status-msg').innerText = "🔴 A player disconnected.";
+            if (turnOrder.length === 0) matchState = 'lobby';
         });
     }
 
-    // ---------- CLIENT MODE ----------
+    // ---------- CLIENT ----------
     function connectToPeer() {
         const joinId = document.getElementById('join-id-input').value.trim().toUpperCase();
         if (!joinId) return;
-        if (joinId === myId) {
-            document.getElementById('status-msg').innerText = "❌ Enter a different player's room code!";
-            return;
-        }
-        if (!myId) {
-            document.getElementById('status-msg').innerText = "⏳ Still generating your room code, try again in a second...";
-            return;
-        }
+        if (joinId === myId) { document.getElementById('status-msg').innerText = "❌ Enter a different player's room code!"; return; }
+        if (!myId) { document.getElementById('status-msg').innerText = "⏳ Generating your room code, try again in a second..."; return; }
         myName = currentName();
         document.getElementById('status-msg').innerText = "Connecting to " + joinId + "...";
 
         hostConn = peer.connect(joinId, { reliable: true });
-        isOnline = true;
-        isHost = false;
+        isOnline = true; isHost = false;
 
         if (connectTimeout) clearTimeout(connectTimeout);
         connectTimeout = setTimeout(() => {
-            if (!hostConn || !hostConn.open) {
-                document.getElementById('status-msg').innerText = "❌ Failed to connect to " + joinId + ". Check the code and try again.";
-            }
+            if (!hostConn || !hostConn.open) document.getElementById('status-msg').innerText = "❌ Failed to connect to " + joinId + ". Check the code and try again.";
         }, 8000);
 
         setupClientSideConnection();
@@ -426,41 +408,32 @@ html_game = r"""
     function setupClientSideConnection() {
         hostConn.on('open', () => {
             if (connectTimeout) clearTimeout(connectTimeout);
-            hostConn.send({ type: 'client_input', lane: 2, boosting: false, name: myName });
-            document.getElementById('status-msg').innerText = "🟢 Connected! Waiting for host to start the race...";
-            gameStarted = false;
-            gameOver = false;
-            scoreSaved = false;
+            hostConn.send({ type: 'client_input', name: myName });
+            document.getElementById('status-msg').innerText = "🟢 Connected! Waiting for host to start...";
         });
-
         hostConn.on('data', (data) => {
-            if (data.type === 'room_full') {
-                document.getElementById('status-msg').innerText = "❌ That room is full (max " + MAX_PLAYERS + " players).";
-                return;
-            }
+            if (data.type === 'room_full') { document.getElementById('status-msg').innerText = "❌ Room is full (max " + MAX_PLAYERS + ")."; return; }
             if (data.type === 'host_sync') {
                 players = data.players;
-                enemies = data.enemies;
-                coins = data.coins;
-                gameOver = data.gameOver;
-                gameStarted = data.gameStarted;
-                level = data.level;
+                turnOrder = data.turnOrder;
+                currentTurnIdx = data.currentTurnIdx;
+                roundsPerPlayer = data.roundsPerPlayer;
+                shotsTaken = data.shotsTaken;
+                matchState = data.matchState;
+                meterValue = data.meterValue;
+                ball = data.ball;
                 renderPlayerChips();
+                if (matchState === 'matchOver' && !scoreSaved) {
+                    const me = players[myId];
+                    if (me) saveBestScore(me.name, me.score);
+                    scoreSaved = true;
+                }
             }
         });
-
         hostConn.on('close', () => {
-            document.getElementById('status-msg').innerText = "🔴 Lost connection to host. Play Solo or join another room.";
-            isOnline = false;
-            gameStarted = false;
+            document.getElementById('status-msg').innerText = "🔴 Lost connection to host.";
+            isOnline = false; matchState = 'lobby';
         });
-    }
-
-    function sendClientInput() {
-        if (isOnline && !isHost && hostConn && hostConn.open) {
-            const me = players[myId];
-            hostConn.send({ type: 'client_input', lane: me ? me.lane : 2, boosting: me ? me.boosting : false, name: myName });
-        }
     }
 
     function renderPlayerChips() {
@@ -470,87 +443,82 @@ html_game = r"""
             const chip = document.createElement('span');
             chip.className = 'chip';
             chip.style.backgroundColor = p.color;
-            chip.innerText = p.name + (p.id === myId ? ' (you)' : '');
+            chip.innerText = p.name + (p.id === myKey() ? ' (you)' : '');
             box.appendChild(chip);
         });
     }
 
-    // ---------- GAME STATE ----------
-    function resetRoundState() {
-        enemies = [];
-        coins = [];
-        gameOver = false;
-        frameCount = 0;
-        level = 1;
-        Object.values(players).forEach(p => {
-            p.y = 580;
-            p.score = 0;
-            p.alive = true;
-            p.boosting = false;
-        });
+    // ---------- SHOOTING LOGIC (host authoritative) ----------
+    function isMyTurn() { return matchState === 'aiming' && turnOrder[currentTurnIdx] === myKey(); }
+
+    function handleShootPress() {
+        if (!isMyTurn()) return;
+        if (isHost || !isOnline) {
+            resolveShot();
+        } else if (hostConn && hostConn.open) {
+            hostConn.send({ type: 'shoot' });
+        }
     }
 
-    function restartAfterCrash() {
-        if (!gameOver) return;
-        if (!isOnline) {
-            resetRoundState();
-            gameStarted = true;
-            scoreSaved = false;
-        } else if (isHost) {
-            resetRoundState();
-            gameStarted = true;
-            scoreSaved = false;
+    function resolveShot() {
+        if (matchState !== 'aiming') return;
+        const power = meterValue;
+        const diff = Math.abs(power - IDEAL_POWER);
+        let pts = 0, text = "MISS", color = "#ff6b6b";
+        if (diff <= 4) { pts = 3; text = "SWISH! +3"; color = "#00fff5"; }
+        else if (diff <= 9) { pts = 2; text = "SPLASH! +2"; color = "#4dff4d"; }
+        else if (diff <= 16) {
+            const chance = Math.max(0, (1 - (diff - 9) / 7) * 0.5);
+            if (Math.random() < chance) { pts = 2; text = "RATTLED IN! +2"; color = "#4dff4d"; }
+            else { text = ["MISS", "OFF THE RIM"][Math.floor(Math.random()*2)]; }
+        } else {
+            text = ["MISS", "NO GOOD", "AIR BALL"][Math.floor(Math.random()*3)];
         }
-        // clients wait for host to restart via next host_sync
+
+        const shooterId = turnOrder[currentTurnIdx];
+        const shooter = players[shooterId];
+        if (shooter) shooter.score += pts;
+        shotsTaken[shooterId] = (shotsTaken[shooterId] || 0) + 1;
+
+        matchState = 'flying';
+        ball = { t: 0, startTime: performance.now(), landingT: power / 100, resultText: text, resultColor: color, resultPts: pts, shooterId: shooterId, resultShownAt: 0 };
+    }
+
+    function advanceTurn() {
+        if (turnOrder.length === 0) { matchState = 'lobby'; return; }
+        let attempts = 0;
+        do {
+            currentTurnIdx = (currentTurnIdx + 1) % turnOrder.length;
+            attempts++;
+        } while ((shotsTaken[turnOrder[currentTurnIdx]] || 0) >= roundsPerPlayer && attempts <= turnOrder.length);
+
+        const allDone = turnOrder.every(id => (shotsTaken[id] || 0) >= roundsPerPlayer);
+        if (allDone) {
+            matchState = 'matchOver';
+            const me = players[myKey()];
+            if (me && !scoreSaved) { saveBestScore(me.name, me.score); scoreSaved = true; }
+            document.getElementById('start-race-btn').innerText = '🔁 Play Again';
+            document.getElementById('start-race-btn').style.display = (isHost || !isOnline) ? 'inline-block' : 'none';
+            renderFinalBoard();
+        } else {
+            matchState = 'aiming';
+            aimStartTime = performance.now();
+            const totalShots = Object.values(shotsTaken).reduce((a, b) => a + b, 0);
+            meterSpeed = Math.min(3, 1.3 + 0.05 * totalShots);
+            ball = { t: 0 };
+        }
     }
 
     // ---------- INPUT ----------
-    function handleSteer(dir) {
-        const p = players[isOnline ? (isHost ? myId : myId) : 'me'];
-        if (!gameStarted || gameOver || !p || !p.alive) return;
-        if (dir === 'left' && p.lane > 0) p.lane--;
-        if (dir === 'right' && p.lane < lanes.length - 1) p.lane++;
-        sendClientInput();
-    }
-    function setBoost(state) {
-        const p = players[isOnline ? myId : 'me'];
-        if (!gameStarted || !p) return;
-        p.boosting = state;
-        sendClientInput();
-    }
-
+    document.getElementById('shoot-btn').addEventListener('pointerdown', (e) => { e.preventDefault(); handleShootPress(); });
     window.addEventListener('keydown', (e) => {
         if (e.target.tagName === 'INPUT') { if (e.key === 'Enter') connectToPeer(); return; }
-        if (["ArrowUp","ArrowDown","ArrowLeft","ArrowRight","Space","KeyW","KeyA","KeyS","KeyD"].includes(e.code)) e.preventDefault();
-        if (e.code === "Space" && gameOver) { restartAfterCrash(); return; }
-        if (e.repeat) return;
-        if (e.code === "ArrowLeft" || e.code === "KeyA") handleSteer('left');
-        if (e.code === "ArrowRight" || e.code === "KeyD") handleSteer('right');
-        if (e.code === "ArrowUp" || e.code === "KeyW") setBoost(true);
+        if (e.code === 'Space') { e.preventDefault(); handleShootPress(); }
     }, { passive: false });
 
-    window.addEventListener('keyup', (e) => {
-        if (e.target.tagName === 'INPUT') return;
-        if (e.code === "ArrowUp" || e.code === "KeyW") setBoost(false);
-    }, { passive: false });
-
-    function bindTouchBtn(el, onDown, onUp) {
-        const down = (ev) => { ev.preventDefault(); el.classList.add('pressed'); onDown(); };
-        const up = (ev) => { ev.preventDefault(); el.classList.remove('pressed'); if (onUp) onUp(); };
-        el.addEventListener('pointerdown', down);
-        el.addEventListener('pointerup', up);
-        el.addEventListener('pointerleave', up);
-        el.addEventListener('pointercancel', up);
-    }
-    bindTouchBtn(document.getElementById('left-btn'), () => handleSteer('left'));
-    bindTouchBtn(document.getElementById('right-btn'), () => handleSteer('right'));
-    bindTouchBtn(document.getElementById('boost-btn'), () => setBoost(true), () => setBoost(false));
-    canvas.addEventListener('pointerdown', () => { if (gameOver) restartAfterCrash(); });
-
-    // ---------- LOCAL BEST SCORES (per-browser leaderboard) ----------
+    // ---------- LOCAL BEST SCORES ----------
     function loadBestScores() {
-        try { return JSON.parse(localStorage.getItem('racerBestScores') || '[]'); }
-        catch (e) { return []; }
+        try { return JSON.parse(localStorage.getItem('hoopBestScores') || '[]'); } catch (e) { return []; }
     }
     function saveBestScore(name, score) {
         if (score <= 0) return;
@@ -558,172 +526,188 @@ html_game = r"""
         list.push({ name: name, score: score, ts: Date.now() });
         list.sort((a, b) => b.score - a.score);
         list = list.slice(0, 10);
-        localStorage.setItem('racerBestScores', JSON.stringify(list));
+        localStorage.setItem('hoopBestScores', JSON.stringify(list));
         renderBestBoard();
     }
     function renderBestBoard() {
         const box = document.getElementById('best-board');
         const list = loadBestScores();
         if (!list.length) { box.innerHTML = '<div class="board-empty">No scores yet on this device</div>'; return; }
-        box.innerHTML = list.map((e, i) =>
-            '<div class="board-row"><span>' + (i+1) + '. ' + escapeHtml(e.name) + '</span><span>' + e.score + '</span></div>'
-        ).join('');
+        box.innerHTML = list.map((e, i) => '<div class="board-row"><span>' + (i+1) + '. ' + escapeHtml(e.name) + '</span><span>' + e.score + '</span></div>').join('');
     }
-    function renderLiveBoard() {
+    function renderFinalBoard() {
         const box = document.getElementById('live-board');
         const list = Object.values(players).sort((a, b) => b.score - a.score);
-        if (!list.length || !gameStarted) { box.innerHTML = '<div class="board-empty">Start a race to see scores</div>'; return; }
-        box.innerHTML = list.map((p, i) =>
-            '<div class="board-row"><span style="color:' + p.color + '">' + (i+1) + '. ' + escapeHtml(p.name) + (p.alive ? '' : ' 💥') + '</span><span>' + p.score + '</span></div>'
-        ).join('');
+        if (!list.length) { box.innerHTML = '<div class="board-empty">No players</div>'; return; }
+        box.innerHTML = list.map((p, i) => '<div class="board-row"><span style="color:' + p.color + '">' + (i+1) + '. ' + escapeHtml(p.name) + '</span><span>' + p.score + '</span></div>').join('');
     }
     function escapeHtml(s) { return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
 
     // ---------- DRAWING ----------
-    function drawCar(x, y, bodyColor, boosting) {
-        const leftX = x - carWidth / 2;
-        ctx.fillStyle = "#111111";
-        ctx.fillRect(leftX - 3, y + 8, 4, 12);
-        ctx.fillRect(leftX + carWidth - 1, y + 8, 4, 12);
-        ctx.fillRect(leftX - 3, y + 38, 4, 12);
-        ctx.fillRect(leftX + carWidth - 1, y + 38, 4, 12);
-        if (boosting) {
-            ctx.fillStyle = "#ff5500";
-            ctx.beginPath();
-            ctx.moveTo(leftX + 8, y + carHeight);
-            ctx.lineTo(leftX + carWidth / 2, y + carHeight + Math.random() * 10 + 15);
-            ctx.lineTo(leftX + carWidth - 8, y + carHeight);
-            ctx.fill();
+    function drawCourt() {
+        ctx.fillStyle = "#1b2a4a";
+        ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+        ctx.strokeStyle = "rgba(255,255,255,0.15)";
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.moveTo(0, 480); ctx.lineTo(LOGICAL_W, 480); ctx.stroke();
+
+        // backboard
+        ctx.fillStyle = "#e5e5e5";
+        ctx.fillRect(hoopX - 42, hoopY - 68, 84, 10);
+        ctx.fillRect(hoopX - 3, hoopY - 68, 6, 55);
+        // rim
+        ctx.strokeStyle = "#ff5500";
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.ellipse(hoopX, hoopY, 26, 8, 0, 0, Math.PI * 2);
+        ctx.stroke();
+        // net
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.lineWidth = 1;
+        for (let i = -20; i <= 20; i += 8) {
+            ctx.beginPath(); ctx.moveTo(hoopX + i, hoopY + 3); ctx.lineTo(hoopX + i * 0.4, hoopY + 30); ctx.stroke();
         }
-        ctx.fillStyle = bodyColor;
-        ctx.fillRect(leftX, y, carWidth, carHeight);
-        ctx.fillStyle = "#1a1a1a";
-        ctx.fillRect(leftX + 4, y + 12, carWidth - 8, 18);
-        ctx.fillStyle = bodyColor;
-        ctx.fillRect(leftX + 6, y + 16, carWidth - 12, 9);
     }
 
-    function drawCoin(x, y) {
-        ctx.fillStyle = "#ffd700";
-        ctx.beginPath();
-        ctx.arc(x, y, 10, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.strokeStyle = "#b8860b";
-        ctx.lineWidth = 2;
-        ctx.stroke();
+    function drawShooter(color, name) {
+        ctx.fillStyle = color;
+        ctx.beginPath(); ctx.arc(shooterX, shooterY - 30, 12, 0, Math.PI * 2); ctx.fill();
+        ctx.fillRect(shooterX - 9, shooterY - 18, 18, 40);
+        ctx.font = "bold 12px Arial";
+        ctx.textAlign = "center";
+        ctx.fillText(name, shooterX, shooterY - 48);
+        ctx.textAlign = "left";
+    }
+
+    function drawBall(x, y) {
+        ctx.fillStyle = "#ff8c00";
+        ctx.beginPath(); ctx.arc(x, y, 9, 0, Math.PI * 2); ctx.fill();
+        ctx.strokeStyle = "#8a4600"; ctx.lineWidth = 1.3;
+        ctx.beginPath(); ctx.moveTo(x - 9, y); ctx.lineTo(x + 9, y); ctx.stroke();
+        ctx.beginPath(); ctx.moveTo(x, y - 9); ctx.lineTo(x, y + 9); ctx.stroke();
+    }
+
+    function drawMeter() {
+        const barX = 40, barY = 500, barW = LOGICAL_W - 80, barH = 16;
+        ctx.fillStyle = "#0e1117";
+        ctx.fillRect(barX, barY, barW, barH);
+        const zone = (lo, hi, col) => {
+            ctx.fillStyle = col;
+            ctx.fillRect(barX + (lo/100)*barW, barY, ((hi-lo)/100)*barW, barH);
+        };
+        zone(IDEAL_POWER-16, IDEAL_POWER-9, "rgba(255,255,0,0.25)");
+        zone(IDEAL_POWER+9, IDEAL_POWER+16, "rgba(255,255,0,0.25)");
+        zone(IDEAL_POWER-9, IDEAL_POWER-4, "rgba(77,255,77,0.5)");
+        zone(IDEAL_POWER+4, IDEAL_POWER+9, "rgba(77,255,77,0.5)");
+        zone(IDEAL_POWER-4, IDEAL_POWER+4, "rgba(0,255,245,0.7)");
+        ctx.strokeStyle = "#0f3460"; ctx.lineWidth = 2;
+        ctx.strokeRect(barX, barY, barW, barH);
+        const ix = barX + (meterValue/100)*barW;
+        ctx.fillStyle = "#ffffff";
+        ctx.fillRect(ix - 2, barY - 4, 4, barH + 8);
+    }
+
+    function currentTurnPlayer() {
+        if (!turnOrder.length) return null;
+        return players[turnOrder[currentTurnIdx]] || null;
     }
 
     function updateAndRender() {
-        ctx.fillStyle = "#2d2d2d";
-        ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+        drawCourt();
 
-        ctx.strokeStyle = "#ffffff";
-        ctx.setLineDash([20, 15]);
-        ctx.beginPath();
-        [127, 242, 357, 472].forEach(x => { ctx.moveTo(x, 0); ctx.lineTo(x, LOGICAL_H); });
-        ctx.stroke();
-        ctx.setLineDash([]);
-
-        if (!gameStarted) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+        if (matchState === 'lobby') {
+            ctx.fillStyle = "rgba(0,0,0,0.55)";
             ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
             ctx.fillStyle = "#00fff5";
-            ctx.font = "bold 30px Arial";
+            ctx.font = "bold 26px Arial";
             ctx.textAlign = "center";
-            ctx.fillText("PYTHON RACER", LOGICAL_W / 2, LOGICAL_H / 2 - 20);
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "15px Arial";
-            ctx.fillText("Play Solo, or Host / Join a P2P room above", LOGICAL_W / 2, LOGICAL_H / 2 + 15);
+            ctx.fillText("HOOP SHOOTOUT", LOGICAL_W/2, LOGICAL_H/2 - 10);
+            ctx.fillStyle = "#fff";
+            ctx.font = "14px Arial";
+            ctx.fillText("Play Solo, or Host / Join a room above", LOGICAL_W/2, LOGICAL_H/2 + 18);
             ctx.textAlign = "left";
+            document.getElementById('shoot-btn').classList.add('disabled');
             requestAnimationFrame(updateAndRender);
             return;
         }
 
-        if (!isOnline || isHost) {
-            if (!gameOver) {
-                const alivePlayers = Object.values(players).filter(p => p.alive);
-                const maxScore = Math.max(0, ...Object.values(players).map(p => p.score));
-                level = Math.floor(maxScore / 100) + 1;
-                const baseSpeed = 5 + (level * 1.1);
-                const anyBoost = alivePlayers.some(p => p.boosting);
-                const speed = baseSpeed * (anyBoost ? 1.6 : 1.0);
-
-                frameCount++;
-                if (frameCount % Math.max(16, 40 - level * 2) === 0) {
-                    enemies.push({ x: lanes[Math.floor(Math.random() * lanes.length)], y: -60, color: enemyColors[Math.floor(Math.random() * enemyColors.length)] });
-                }
-                if (frameCount % 85 === 0) {
-                    coins.push({ x: lanes[Math.floor(Math.random() * lanes.length)], y: -30 });
-                }
-
-                for (let i = coins.length - 1; i >= 0; i--) {
-                    coins[i].y += speed;
-                    Object.values(players).forEach(p => {
-                        if (p.alive && Math.abs(lanes[p.lane] - coins[i].x) < 25 && Math.abs(p.y - coins[i].y) < 30) {
-                            p.score += 25;
-                            coins.splice(i, 1);
-                        }
-                    });
-                    if (coins[i] && coins[i].y > LOGICAL_H + 40) coins.splice(i, 1);
-                }
-
-                for (let i = enemies.length - 1; i >= 0; i--) {
-                    enemies[i].y += speed;
-                    Object.values(players).forEach(p => {
-                        if (p.alive && Math.abs(lanes[p.lane] - enemies[i].x) < 26 && Math.abs(p.y - enemies[i].y) < 45) {
-                            p.alive = false;
-                        }
-                    });
-                    if (enemies[i] && enemies[i].y > LOGICAL_H + 20) {
-                        enemies.splice(i, 1);
-                        Object.values(players).forEach(p => { if (p.alive) p.score += p.boosting ? 20 : 10; });
-                    }
-                }
-
-                if (Object.values(players).length && Object.values(players).every(p => !p.alive)) gameOver = true;
-
-                if (isOnline) {
-                    Object.values(connections).forEach(conn => {
-                        if (conn.open) {
-                            conn.send({ type: 'host_sync', players: players, enemies: enemies, coins: coins, gameOver: gameOver, gameStarted: gameStarted, level: level });
-                        }
-                    });
-                }
+        if (isHost || !isOnline) {
+            if (matchState === 'aiming') {
+                meterValue = 50 + 50 * Math.sin((performance.now() - aimStartTime) / 1000 * meterSpeed);
+                if (performance.now() - aimStartTime > TURN_TIME_MS) resolveShot();
+            } else if (matchState === 'flying') {
+                const elapsed = performance.now() - ball.startTime;
+                ball.t = Math.min(1, elapsed / FLIGHT_MS);
+                if (ball.t >= 1 && !ball.resultShownAt) ball.resultShownAt = performance.now();
+                if (ball.resultShownAt && performance.now() - ball.resultShownAt > RESULT_HOLD_MS) advanceTurn();
+            }
+            if (isOnline) {
+                Object.values(connections).forEach(conn => {
+                    if (conn.open) conn.send({ type: 'host_sync', players, turnOrder, currentTurnIdx, roundsPerPlayer, shotsTaken, matchState, meterValue, ball });
+                });
             }
         }
 
-        coins.forEach(c => drawCoin(c.x, c.y));
-        enemies.forEach(e => drawCar(e.x, e.y, e.color, false));
-        Object.values(players).forEach(p => { if (p.alive) drawCar(lanes[p.lane], p.y, p.color, p.boosting); });
+        const turnPlayer = currentTurnPlayer();
 
-        ctx.font = "bold 13px Arial";
+        if (matchState === 'matchOver') {
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
+            ctx.fillStyle = "#ffbe00";
+            ctx.font = "bold 26px Arial";
+            ctx.textAlign = "center";
+            ctx.fillText("GAME OVER", LOGICAL_W/2, 70);
+            const ranked = Object.values(players).sort((a,b) => b.score - a.score);
+            ctx.font = "bold 16px Arial";
+            ranked.slice(0,5).forEach((p, i) => {
+                ctx.fillStyle = p.color;
+                ctx.fillText((i+1) + ". " + p.name + " — " + p.score + " pts", LOGICAL_W/2, 110 + i*26);
+            });
+            ctx.fillStyle = "#fff"; ctx.font = "13px Arial";
+            ctx.fillText((isHost || !isOnline) ? "Tap Play Again above" : "Waiting for host to restart...", LOGICAL_W/2, LOGICAL_H - 30);
+            ctx.textAlign = "left";
+            document.getElementById('shoot-btn').classList.add('disabled');
+            requestAnimationFrame(updateAndRender);
+            return;
+        }
+
+        if (turnPlayer) drawShooter(turnPlayer.color, turnPlayer.name + (turnPlayer.id === myKey() ? " (you)" : ""));
+
+        if (matchState === 'aiming') {
+            drawMeter();
+            drawBall(shooterX, shooterY - 55);
+            const secsLeft = Math.max(0, (TURN_TIME_MS - (performance.now() - aimStartTime)) / 1000).toFixed(1);
+            ctx.fillStyle = "#f9d56e"; ctx.font = "bold 13px Arial"; ctx.textAlign = "center";
+            ctx.fillText("⏱ " + secsLeft + "s", LOGICAL_W/2, 30);
+            ctx.textAlign = "left";
+        } else if (matchState === 'flying' || matchState === 'result') {
+            const t = ball.t;
+            const landX = shooterX + (extendedX - shooterX) * ball.landingT;
+            const landY = shooterY + (extendedY - shooterY) * ball.landingT;
+            const peak = 60 + 140 * ball.landingT;
+            const bx = shooterX + (landX - shooterX) * t;
+            const by = (shooterY - 55) + (landY - (shooterY - 55)) * t - peak * 4 * t * (1 - t);
+            drawBall(bx, by);
+            if (ball.resultShownAt) {
+                ctx.fillStyle = ball.resultColor;
+                ctx.font = "bold 24px Arial";
+                ctx.textAlign = "center";
+                ctx.fillText(ball.resultText, LOGICAL_W/2, LOGICAL_H/2);
+                ctx.textAlign = "left";
+            }
+        }
+
+        ctx.font = "bold 12px Arial";
         let hy = 22;
-        Object.values(players).slice(0, 5).forEach((p, i) => {
+        Object.values(players).slice(0, 5).forEach(p => {
             ctx.fillStyle = p.color;
-            ctx.fillText(p.name + ": " + p.score, 12, hy);
-            hy += 18;
+            ctx.fillText(p.name + ": " + p.score, 10, hy);
+            hy += 16;
         });
 
-        if (gameOver) {
-            ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
-            ctx.fillRect(0, 0, LOGICAL_W, LOGICAL_H);
-            ctx.fillStyle = "#ff0055";
-            ctx.font = "bold 28px Arial";
-            ctx.textAlign = "center";
-            ctx.fillText("CRASHED", LOGICAL_W / 2, LOGICAL_H / 2 - 10);
-            ctx.fillStyle = "#ffffff";
-            ctx.font = "16px Arial";
-            ctx.fillText(isHost || !isOnline ? "Press SPACE or tap to restart" : "Waiting for host to restart...", LOGICAL_W / 2, LOGICAL_H / 2 + 25);
-            ctx.textAlign = "left";
+        const shootBtn = document.getElementById('shoot-btn');
+        if (isMyTurn()) shootBtn.classList.remove('disabled'); else shootBtn.classList.add('disabled');
 
-            if (!scoreSaved) {
-                const me = players[isOnline ? myId : 'me'];
-                if (me) { saveBestScore(me.name, me.score); }
-                scoreSaved = true;
-            }
-        }
-
-        renderLiveBoard();
         requestAnimationFrame(updateAndRender);
     }
 
@@ -731,23 +715,25 @@ html_game = r"""
         initPeer();
         renderBestBoard();
         requestAnimationFrame(updateAndRender);
+        reportHeight();
     };
 </script>
 </body>
 </html>
 """
 
-components.html(html_game, height=1150, scrolling=True)
+components.html(html_game, height=700, scrolling=False)
 
 st.markdown("""
 ---
 **How multiplayer works:** one player clicks **Host Room** and shares their room code; up to 4 friends
-**Join Room** with that code (works across devices/networks via P2P + STUN/TURN, same as before).
-The host's browser is authoritative for game logic and relays state to everyone else — no external
-server or database is required.
+**Join Room** with that code (P2P over STUN/TURN — works across devices and networks, no server needed).
+The host is authoritative for the shot simulation and turn order, and relays state to everyone else.
 
-**About the leaderboard:** the *Live Leaderboard* shows everyone's score during the current race.
-The *Local Best Scores* board persists your top runs in this browser (via `localStorage`), so it's
-per-device rather than a shared global leaderboard — a truly global leaderboard across devices would
-need a small backend/database, which is outside what a pure P2P setup can do.
+**Leaderboard:** *Final Results* ranks everyone at the end of a match. *Local Best Scores* persists your
+top runs on this browser (`localStorage`) — it's per-device, not a shared global leaderboard, since a
+real cross-device leaderboard needs a backend/database, which a pure P2P setup can't provide by itself.
+
+**Sizing fix:** the game now reports its actual rendered height back to Streamlit continuously, so the
+embedded frame always resizes to fit the content instead of clipping it or forcing an inner scrollbar.
 """)

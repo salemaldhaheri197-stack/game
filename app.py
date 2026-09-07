@@ -42,11 +42,29 @@ from streamlit_drawable_canvas import st_canvas
 DB_PATH = "doodle_duel.db"
 _DB_LOCK = threading.Lock()
 
-ROUNDS_PER_PLAYER = 5
-TOTAL_ROUNDS = ROUNDS_PER_PLAYER * 2  # each of the two players draws 5 times
-AUTO_ADVANCE_SECONDS = 4  # pause after a correct guess before the next round starts
+SCORE_TO_WIN = 5           # first player to reach this many correct guesses wins the game
+ROUND_TIME_SECONDS = 60    # how long a guesser has before the turn passes on automatically
+AUTO_ADVANCE_SECONDS = 4   # reveal pause after a round ends before the next one starts
+FAMOUS_CHANCE = 0.3        # odds a given suggestion slot is a person/character rather than an object
 
-WORD_BANK = [
+# Everyday objects, animals & things — the bulk of the pool.
+WORD_BANK_OBJECTS = [
+    "Cat", "Dog", "Elephant", "Guitar", "Pizza", "Rocket", "Sunflower",
+    "Umbrella", "Castle", "Dinosaur", "Bicycle", "Octopus", "Rainbow",
+    "Sandwich", "Spider", "Volcano", "Airplane", "Penguin", "Robot",
+    "Mountain", "Butterfly", "Lighthouse", "Snowman", "Kangaroo",
+    "Sailboat", "Cactus", "Campfire", "Dragon", "Helicopter", "Jellyfish",
+    "Ladder", "Mushroom", "Pretzel", "Scarecrow", "Telescope", "Waterfall",
+    "Wizard", "Koala", "Pineapple", "Unicorn", "Backpack", "Camera",
+    "Skateboard", "Beehive", "Anchor", "Windmill", "Igloo", "Tent",
+    "Compass", "Hourglass", "Lantern", "Kite", "Trophy", "Treasure Chest",
+    "Fire Truck", "Submarine", "Hot Air Balloon", "Chandelier", "Cupcake",
+    "Snail", "Peacock", "Flamingo", "Cactus Garden", "Ice Cream Cone",
+]
+
+# Famous people & widely known fictional characters — a smaller, spicier
+# slice of the pool (see FAMOUS_CHANCE below for how often these show up).
+WORD_BANK_FAMOUS = [
     # Famous real people — historical & pop-culture icons
     "Albert Einstein", "Leonardo da Vinci", "William Shakespeare", "Cleopatra",
     "Isaac Newton", "Napoleon Bonaparte", "Mahatma Gandhi", "Nelson Mandela",
@@ -65,6 +83,22 @@ WORD_BANK = [
     "Winnie the Pooh", "Elsa", "Woody", "Buzz Lightyear", "Simba",
     "Pikachu", "Mario", "Sonic the Hedgehog", "Scooby-Doo", "Bugs Bunny",
 ]
+
+
+def pick_word_suggestions(n: int = 3) -> list[str]:
+    """Pick n distinct words for the artist to choose from. Objects come up
+    far more often than famous people/characters (see FAMOUS_CHANCE)."""
+    chosen: list[str] = []
+    seen = set()
+    attempts = 0
+    while len(chosen) < n and attempts < 100:
+        attempts += 1
+        pool = WORD_BANK_FAMOUS if random.random() < FAMOUS_CHANCE else WORD_BANK_OBJECTS
+        candidate = random.choice(pool)
+        if candidate not in seen:
+            seen.add(candidate)
+            chosen.append(candidate)
+    return chosen
 
 st.set_page_config(page_title="Doodle Duel", page_icon="✏️", layout="centered")
 
@@ -318,17 +352,18 @@ def get_connection() -> sqlite3.Connection:
     conn.execute(
         """
         CREATE TABLE IF NOT EXISTS rooms (
-            room_id      TEXT PRIMARY KEY,
-            word         TEXT,
-            artist_name  TEXT,
-            guesser_name TEXT,
-            drawing      TEXT,
-            guesses      TEXT DEFAULT '[]',
-            scores       TEXT DEFAULT '{}',
-            round_num    INTEGER DEFAULT 1,
-            status       TEXT DEFAULT 'waiting',
-            won_at       TEXT,
-            created_at   TEXT
+            room_id          TEXT PRIMARY KEY,
+            word             TEXT,
+            artist_name      TEXT,
+            guesser_name     TEXT,
+            drawing          TEXT,
+            guesses          TEXT DEFAULT '[]',
+            scores           TEXT DEFAULT '{}',
+            round_num        INTEGER DEFAULT 1,
+            status           TEXT DEFAULT 'waiting',
+            won_at           TEXT,
+            round_started_at TEXT,
+            created_at       TEXT
         )
         """
     )
@@ -338,6 +373,8 @@ def get_connection() -> sqlite3.Connection:
         conn.execute("ALTER TABLE rooms ADD COLUMN scores TEXT DEFAULT '{}'")
     if "won_at" not in existing_cols:
         conn.execute("ALTER TABLE rooms ADD COLUMN won_at TEXT")
+    if "round_started_at" not in existing_cols:
+        conn.execute("ALTER TABLE rooms ADD COLUMN round_started_at TEXT")
     conn.commit()
     return conn
 
@@ -355,8 +392,8 @@ def create_room(room_id: str, artist_name: str) -> None:
             """
             INSERT OR REPLACE INTO rooms
                 (room_id, word, artist_name, guesser_name, drawing, guesses,
-                 scores, round_num, status, won_at, created_at)
-            VALUES (?, NULL, ?, NULL, NULL, '[]', '{}', 1, 'waiting', NULL, ?)
+                 scores, round_num, status, won_at, round_started_at, created_at)
+            VALUES (?, NULL, ?, NULL, NULL, '[]', '{}', 1, 'waiting', NULL, NULL, ?)
             """,
             (room_id, artist_name, datetime.utcnow().isoformat()),
         )
@@ -377,14 +414,15 @@ def load_room(room_id: str) -> dict | None:
     conn = get_connection()
     row = conn.execute(
         """SELECT room_id, word, artist_name, guesser_name, drawing, guesses,
-                  scores, round_num, status, won_at, created_at
+                  scores, round_num, status, won_at, round_started_at, created_at
            FROM rooms WHERE room_id = ?""",
         (room_id,),
     ).fetchone()
     if row is None:
         return None
     keys = ["room_id", "word", "artist_name", "guesser_name", "drawing",
-            "guesses", "scores", "round_num", "status", "won_at", "created_at"]
+            "guesses", "scores", "round_num", "status", "won_at",
+            "round_started_at", "created_at"]
     data = dict(zip(keys, row))
     data["guesses"] = json.loads(data["guesses"] or "[]")
     data["scores"] = json.loads(data["scores"] or "{}")
@@ -396,9 +434,10 @@ def start_round(room_id: str, word: str) -> None:
     with _DB_LOCK:
         conn.execute(
             """UPDATE rooms
-               SET word = ?, drawing = NULL, guesses = '[]', status = 'active'
+               SET word = ?, drawing = NULL, guesses = '[]', status = 'active',
+                   round_started_at = ?
                WHERE room_id = ?""",
-            (word, room_id),
+            (word, datetime.utcnow().isoformat(), room_id),
         )
         conn.commit()
 
@@ -443,20 +482,39 @@ def submit_guess(room_id: str, player: str, text: str, correct: bool) -> None:
         conn.commit()
 
 
-def advance_or_finish(room_id: str, round_num: int) -> None:
-    """Automatically move on from a won round: swap artist/guesser and start
-    the next round, or end the game if that was the last one.
+def handle_timeout(room_id: str) -> None:
+    """Called when a round's time limit runs out with no correct guess.
+    Guarded to only fire while the round is still 'active'."""
+    conn = get_connection()
+    with _DB_LOCK:
+        conn.execute(
+            "UPDATE rooms SET status = 'timeout', won_at = ? WHERE room_id = ? AND status = 'active'",
+            (datetime.utcnow().isoformat(), room_id),
+        )
+        conn.commit()
 
-    Guarded with ``WHERE status = 'won'`` so that if both players' browsers
-    happen to trigger this at the same moment, only the first one actually
-    changes anything — the second becomes a harmless no-op.
+
+def advance_or_finish(room_id: str, round_num: int) -> None:
+    """Automatically move on once a round ends — whether it ended with a
+    correct guess or the clock running out. Turns swap either way, so
+    nobody gets stuck drawing (or guessing) forever. If either player has
+    now reached SCORE_TO_WIN, the game ends instead of swapping.
+
+    Guarded with ``WHERE status IN ('won', 'timeout')`` so that if both
+    players' browsers happen to trigger this at the same moment, only the
+    first actually changes anything — the second becomes a harmless no-op.
     """
     conn = get_connection()
     next_num = round_num + 1
     with _DB_LOCK:
-        if next_num > TOTAL_ROUNDS:
+        row = conn.execute("SELECT scores, status FROM rooms WHERE room_id = ?", (room_id,)).fetchone()
+        if row is None or row[1] not in ("won", "timeout"):
+            return  # already advanced by the other player's browser
+        scores = json.loads(row[0] or "{}")
+        game_over = any(s >= SCORE_TO_WIN for s in scores.values())
+        if game_over:
             conn.execute(
-                "UPDATE rooms SET status = 'finished' WHERE room_id = ? AND status = 'won'",
+                "UPDATE rooms SET status = 'finished' WHERE room_id = ? AND status IN ('won', 'timeout')",
                 (room_id,),
             )
         else:
@@ -465,8 +523,8 @@ def advance_or_finish(room_id: str, round_num: int) -> None:
                    SET artist_name = guesser_name,
                        guesser_name = artist_name,
                        word = NULL, drawing = NULL, guesses = '[]',
-                       round_num = ?, status = 'waiting', won_at = NULL
-                   WHERE room_id = ? AND status = 'won'""",
+                       round_num = ?, status = 'waiting', won_at = NULL, round_started_at = NULL
+                   WHERE room_id = ? AND status IN ('won', 'timeout')""",
                 (next_num, room_id),
             )
         conn.commit()
@@ -478,7 +536,7 @@ def reset_game(room_id: str) -> None:
         conn.execute(
             """UPDATE rooms
                SET word = NULL, drawing = NULL, guesses = '[]', scores = '{}',
-                   round_num = 1, status = 'waiting', won_at = NULL
+                   round_num = 1, status = 'waiting', won_at = NULL, round_started_at = NULL
                WHERE room_id = ?""",
             (room_id,),
         )
@@ -514,7 +572,7 @@ def data_url_to_image(data_url: str) -> Image.Image:
 
 def lobby_screen() -> None:
     st.title("✏️ Doodle Duel")
-    st.caption(f"One player draws, the other guesses — {ROUNDS_PER_PLAYER} rounds each, roles swap automatically.")
+    st.caption(f"One player draws, the other guesses — roles swap every round, first to {SCORE_TO_WIN} wins.")
 
     with st.sidebar:
         st.subheader("How to play on two devices")
@@ -525,12 +583,13 @@ def lobby_screen() -> None:
             "2. Open the app URL on **both** devices.\n"
             "3. One player creates a room and shares the 5-character code.\n"
             "4. The other player joins with that code.\n"
-            "5. The artist picks from 3 random word suggestions (famous "
-            "people, movie characters, and cartoon icons) and draws; the "
-            "guesser types guesses live.\n"
-            f"6. After each correct guess, roles swap automatically. The "
-            f"game runs {TOTAL_ROUNDS} rounds total ({ROUNDS_PER_PLAYER} as "
-            "artist for each player), then shows the final score."
+            "5. The artist picks from 3 random word suggestions — mostly "
+            "everyday objects, occasionally a famous person or character — "
+            "and draws; the guesser types guesses live.\n"
+            f"6. Each round has {ROUND_TIME_SECONDS} seconds. Roles swap "
+            "automatically after every round, whether the word was "
+            f"guessed or time ran out. First player to **{SCORE_TO_WIN} "
+            "correct guesses** wins the game."
         )
 
     tab_create, tab_join = st.tabs(["🎨 Create a room (Artist)", "🔍 Join a room (Guesser)"])
@@ -578,12 +637,12 @@ def lobby_screen() -> None:
 
 def artist_screen(room: dict) -> None:
     st.markdown(f"<div class='room-code'>{room['room_id']}</div>", unsafe_allow_html=True)
-    st.caption(f"Round {room['round_num']} of {TOTAL_ROUNDS} · share this code so the other player can join.")
+    st.caption(f"Round {room['round_num']} · first to {SCORE_TO_WIN} points wins · share this code so the other player can join.")
 
     if room["status"] == "waiting" or not room["word"]:
         st.subheader("Pick a word to draw")
         if "word_options" not in st.session_state or st.session_state.get("word_options_round") != room["round_num"]:
-            st.session_state.word_options = random.sample(WORD_BANK, 3)
+            st.session_state.word_options = pick_word_suggestions()
             st.session_state.word_options_round = room["round_num"]
 
         cols = st.columns(3)
@@ -593,7 +652,7 @@ def artist_screen(room: dict) -> None:
                 st.rerun()
 
         if st.button("🔀 Shuffle suggestions", key=f"shuffle_{room['round_num']}"):
-            st.session_state.word_options = random.sample(WORD_BANK, 3)
+            st.session_state.word_options = pick_word_suggestions()
             st.rerun()
         return
 
@@ -622,6 +681,7 @@ def artist_screen(room: dict) -> None:
         key=f"canvas_{room['room_id']}_{room['round_num']}",
         update_streamlit=True,
         return_image_data=True,
+        disabled=(room["status"] != "active"),
     )
 
     if canvas_result.image_data is not None:
@@ -633,8 +693,10 @@ def artist_screen(room: dict) -> None:
     st.markdown("#### Guesses so far")
     render_guess_list(room["guesses"])
 
-    if room["status"] == "won":
-        render_won_banner(room)
+    if room["status"] == "active":
+        render_round_timer(room)
+    elif room["status"] in ("won", "timeout"):
+        render_round_end_banner(room)
 
     st_autorefresh(interval=2000, key=f"artist_refresh_{room['room_id']}")
 
@@ -645,7 +707,7 @@ def artist_screen(room: dict) -> None:
 
 def guesser_screen(room: dict) -> None:
     st.markdown(f"<div class='room-code'>{room['room_id']}</div>", unsafe_allow_html=True)
-    st.caption(f"Round {room['round_num']} of {TOTAL_ROUNDS}")
+    st.caption(f"Round {room['round_num']} · first to {SCORE_TO_WIN} points wins")
 
     if room["status"] == "waiting" or not room["word"]:
         st.info("Waiting for the artist to pick a word and start drawing…")
@@ -659,7 +721,7 @@ def guesser_screen(room: dict) -> None:
     else:
         st.info("The artist hasn't started drawing yet — hang tight.")
 
-    if room["status"] != "won":
+    if room["status"] == "active":
         with st.form(key=f"guess_form_{room['room_id']}_{room['round_num']}", clear_on_submit=True):
             guess_text = st.text_input("Your guess")
             submitted = st.form_submit_button("Submit guess")
@@ -669,8 +731,9 @@ def guesser_screen(room: dict) -> None:
             if correct:
                 st.balloons()
             st.rerun()
+        render_round_timer(room)
     else:
-        render_won_banner(room)
+        render_round_end_banner(room)
 
     st.markdown("#### Guesses so far")
     render_guess_list(room["guesses"])
@@ -696,21 +759,39 @@ def render_guess_list(guesses: list) -> None:
         )
 
 
-def render_won_banner(room: dict) -> None:
-    """Shown to both players once the word is guessed. The next round starts
-    on its own after a short pause — and roles swap automatically."""
-    winner = next((g["player"] for g in room["guesses"] if g["correct"]), room["guesser_name"])
-    next_artist = room["guesser_name"]  # whoever guessed correctly draws next
-    st.success(f"🎉 {winner} guessed it — the word was **{room['word']}**!")
+def render_round_timer(room: dict) -> None:
+    """Live countdown during an active round. When time runs out, ends the
+    round as a timeout — turns still pass on even without a correct guess."""
+    elapsed = 0.0
+    if room.get("round_started_at"):
+        elapsed = (datetime.utcnow() - datetime.fromisoformat(room["round_started_at"])).total_seconds()
+    remaining = max(0, round(ROUND_TIME_SECONDS - elapsed))
+    st.progress(min(1.0, elapsed / ROUND_TIME_SECONDS), text=f"⏱️ {remaining}s left this round")
 
+    if elapsed >= ROUND_TIME_SECONDS:
+        handle_timeout(room["room_id"])
+        st.rerun()
+
+
+def render_round_end_banner(room: dict) -> None:
+    """Shown to both players once a round ends — by a correct guess or the
+    clock running out. Either way the next round starts on its own after a
+    short pause, and roles swap automatically."""
+    if room["status"] == "won":
+        winner = next((g["player"] for g in room["guesses"] if g["correct"]), room["guesser_name"])
+        st.success(f"🎉 {winner} guessed it — the word was **{room['word']}**!")
+    else:
+        st.warning(f"⏰ Time's up! The word was **{room['word']}**.")
+
+    next_artist = room["guesser_name"]  # turn always passes to the guesser next
     elapsed = AUTO_ADVANCE_SECONDS
     if room.get("won_at"):
         elapsed = (datetime.utcnow() - datetime.fromisoformat(room["won_at"])).total_seconds()
     remaining = max(0, round(AUTO_ADVANCE_SECONDS - elapsed))
 
-    is_last_round = room["round_num"] >= TOTAL_ROUNDS
-    if is_last_round:
-        st.caption(f"That was the last round — final scores in {remaining}s…")
+    game_about_to_end = any(s >= SCORE_TO_WIN for s in room["scores"].values())
+    if game_about_to_end:
+        st.caption(f"That's {SCORE_TO_WIN} points — final scores in {remaining}s…")
     else:
         st.caption(f"Next up, **{next_artist}** draws and **{room['artist_name']}** guesses — starting in {remaining}s…")
 

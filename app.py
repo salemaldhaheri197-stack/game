@@ -157,6 +157,7 @@ html_game = """
             document.getElementById('status-msg').innerText = "🎮 Playing Single Player Mode";
             resetGameState();
             gameStarted = true;
+            document.activeElement.blur();
         }
 
         function connectToPeer() {
@@ -173,6 +174,7 @@ html_game = """
             isHost = false;
             p2.alive = true;
             setupConnection();
+            document.activeElement.blur();
         }
 
         function setupConnection() {
@@ -223,8 +225,16 @@ html_game = """
             level = 1;
         }
 
-        // Prevent window scroll from arrow keys
+        // Keyboard Event Handlers
         window.addEventListener('keydown', (e) => {
+            // Allow normal typing inside input fields
+            if (e.target.tagName === 'INPUT') {
+                if (e.key === 'Enter') {
+                    connectToPeer();
+                }
+                return;
+            }
+
             if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code)) {
                 e.preventDefault();
             }
@@ -249,6 +259,8 @@ html_game = """
         }, { passive: false });
 
         window.addEventListener('keyup', (e) => {
+            if (e.target.tagName === 'INPUT') return;
+
             if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code)) {
                 e.preventDefault();
             }

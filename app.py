@@ -54,7 +54,6 @@ html_game = """
             font-weight: bold;
         }
         .lobby-panel button:hover { background-color: #0f3460; }
-        .mode-btn { background-color: #0f3460 !important; margin-left: 4px; }
         .start-btn { background-color: #28a745 !important; font-size: 1.05em; padding: 8px 18px !important; }
         #status-msg { margin-top: 8px; font-weight: bold; color: #f9d56e; font-size: 0.9em; }
         
@@ -109,6 +108,7 @@ html_game = """
         let myId = "";
         let isOnline = false;
         let isHost = true;
+        let connectTimeout = null;
 
         let gameStarted = false;
         let gameOver = false;
@@ -123,12 +123,29 @@ html_game = """
         const enemyColors = ["#ff0055", "#ffbe00", "#00ff66"];
 
         function initPeer() {
-            const shortId = Math.random().toString(36).substring(2, 7).toUpperCase();
+            // Standard short uppercase ID setup
+            const shortId = "RACE-" + Math.random().toString(36).substring(2, 6).toUpperCase();
+            
+            // Expanded STUN/TURN server configuration to bypass strict firewalls & NATs
             peer = new Peer(shortId, {
+                debug: 1,
                 config: {
                     iceServers: [
                         { urls: 'stun:stun.l.google.com:19302' },
-                        { urls: 'stun:stun1.l.google.com:19302' }
+                        { urls: 'stun:stun1.l.google.com:19302' },
+                        { urls: 'stun:stun2.l.google.com:19302' },
+                        { urls: 'stun:stun3.l.google.com:19302' },
+                        { urls: 'stun:stun4.l.google.com:19302' },
+                        {
+                            urls: 'turn:openrelay.metered.ca:80',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        },
+                        {
+                            urls: 'turn:openrelay.metered.ca:443',
+                            username: 'openrelayproject',
+                            credential: 'openrelayproject'
+                        }
                     ]
                 }
             });
@@ -147,11 +164,13 @@ html_game = """
             });
 
             peer.on('error', (err) => {
-                document.getElementById('status-msg').innerText = "⚠️ Network alert: " + err.type;
+                if (connectTimeout) clearTimeout(connectTimeout);
+                document.getElementById('status-msg').innerText = "⚠️ Network error: " + err.type + ". Check room code or firewall.";
             });
         }
 
         function startSinglePlayer() {
+            if (connectTimeout) clearTimeout(connectTimeout);
             isOnline = false;
             p2.alive = false;
             document.getElementById('status-msg').innerText = "🎮 Playing Single Player Mode";
@@ -169,16 +188,28 @@ html_game = """
             }
             
             document.getElementById('status-msg').innerText = "Connecting to " + joinId + "...";
-            conn = peer.connect(joinId);
+            
+            // Reliable connection call with reliable state option
+            conn = peer.connect(joinId, { reliable: true });
             isOnline = true;
             isHost = false;
             p2.alive = true;
+
+            // Timeout check if peer is unreachable
+            if (connectTimeout) clearTimeout(connectTimeout);
+            connectTimeout = setTimeout(() => {
+                if (!conn || !conn.open) {
+                    document.getElementById('status-msg').innerText = "❌ Failed to connect to " + joinId + ". Ensure Room Code is active and try again.";
+                }
+            }, 8000);
+
             setupConnection();
             document.activeElement.blur();
         }
 
         function setupConnection() {
             conn.on('open', () => {
+                if (connectTimeout) clearTimeout(connectTimeout);
                 document.getElementById('status-msg').innerText = "🟢 Connected! " + (isHost ? "You are HOST (P1)" : "You are CLIENT (P2)");
                 resetGameState();
                 gameStarted = true;
@@ -227,7 +258,6 @@ html_game = """
 
         // Keyboard Event Handlers
         window.addEventListener('keydown', (e) => {
-            // Allow normal typing inside input fields
             if (e.target.tagName === 'INPUT') {
                 if (e.key === 'Enter') {
                     connectToPeer();

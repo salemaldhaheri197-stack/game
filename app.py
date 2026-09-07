@@ -116,41 +116,56 @@ def inject_css() -> None:
         :root {
             --ink: #201B2E;
             --paper: #FFF8EC;
+            --card: #FFFFFF;
             --coral: #FF6B6B;
             --sunny: #FFC93C;
             --sky: #3DB4F2;
             --grass: #3FC97C;
             --grape: #9B6BFF;
+            --bubblegum: #FF8FD8;
         }
 
-        /* Sketchbook-paper backdrop: a faint dot grid, like graph paper */
-        html, body, .stApp {
-            background-color: var(--paper);
+        /* Sketchbook-paper backdrop: a faint dot grid, like graph paper.
+           Backgrounds and text colours below are pinned explicitly (not just
+           via Streamlit's theme) so a visitor's phone in dark mode can never
+           leave us with dark text on a dark widget background. */
+        html, body, .stApp, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
+            background-color: var(--paper) !important;
+            color: var(--ink);
         }
         .stApp {
             background-image: radial-gradient(rgba(32,27,46,0.09) 1.4px, transparent 1.4px);
             background-size: 22px 22px;
         }
+        /* A few faint doodles drifting in the corners for flavour, hidden on
+           narrow screens so they never crowd the game itself. */
+        .stApp::before, .stApp::after {
+            content: "✏️";
+            position: fixed;
+            font-size: 2.6rem;
+            opacity: 0.12;
+            pointer-events: none;
+            z-index: 0;
+        }
+        .stApp::before { top: 4%; left: 3%; transform: rotate(-18deg); }
+        .stApp::after { content: "🎨"; bottom: 5%; right: 4%; transform: rotate(14deg); }
+        @media (max-width: 640px) { .stApp::before, .stApp::after { display: none; } }
 
         html, body, [class*="css"] { font-family: 'Quicksand', sans-serif; }
         h1, h2, h3, .room-code, .stButton > button, .score-chip {
             font-family: 'Baloo 2', sans-serif !important;
         }
 
-        h1, h2, h3 {
-            color: var(--ink);
-        }
+        h1, h2, h3 { color: var(--ink); }
         h1 {
             text-decoration: underline wavy var(--sky);
             text-decoration-thickness: 3px;
             text-underline-offset: 8px;
         }
 
-        /* Force our ink colour everywhere text appears, regardless of the
-           visitor's light/dark system theme — Streamlit's own dark theme
-           otherwise renders body text white, which disappears on our
-           light paper background. */
-        .stApp,
+        /* Force our ink colour everywhere text appears, and a light card
+           background behind every input-like widget, regardless of the
+           visitor's light/dark system theme. */
         .stApp p,
         .stApp span,
         .stApp label,
@@ -161,12 +176,26 @@ def inject_css() -> None:
         .stApp div[data-testid="stCaptionContainer"],
         .stApp div[data-testid="stMetricValue"],
         .stApp div[data-testid="stMetricLabel"],
-        .stApp div[data-testid="stTextInput"] input,
         .stApp div[data-testid="stAlertContentSuccess"],
         .stApp div[data-testid="stAlertContentInfo"],
         .stApp div[data-testid="stAlertContentError"],
         .stApp div[data-testid="stAlertContentWarning"] {
             color: var(--ink) !important;
+        }
+        .stApp div[data-testid="stTextInput"] input,
+        .stApp div[data-testid="stNumberInput"] input,
+        .stApp textarea,
+        .stApp div[data-baseweb="input"],
+        .stApp div[data-baseweb="base-input"],
+        .stApp div[data-baseweb="select"] > div {
+            background-color: var(--card) !important;
+            color: var(--ink) !important;
+            caret-color: var(--ink);
+        }
+        .stApp div[data-testid="stForm"] {
+            background: transparent;
+            border: none;
+            padding: 0;
         }
 
         .block-container, .stMainBlockContainer {
@@ -187,7 +216,7 @@ def inject_css() -> None:
             font-size: 1.05rem;
             font-weight: 700;
             color: var(--ink);
-            background: #FFFFFF;
+            background: var(--card);
             border: 2.5px solid var(--ink);
             border-radius: 14px;
             box-shadow: 4px 4px 0 var(--ink);
@@ -197,13 +226,26 @@ def inject_css() -> None:
         .stButton > button:hover {
             background: var(--sky);
             color: var(--ink);
-            transform: translate(-2px, -2px);
+            transform: translate(-2px, -2px) rotate(-1deg);
             box-shadow: 6px 6px 0 var(--ink);
         }
         div[data-testid="stButton"] > button:active,
         .stButton > button:active {
             transform: translate(1px, 1px);
             box-shadow: 2px 2px 0 var(--ink);
+        }
+
+        /* Give the three word-suggestion buttons (and anything else that
+           happens to sit in a row of columns) a splash of different candy
+           colours instead of plain white, for variety. */
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(1) .stButton > button {
+            background: var(--coral); color: #FFFFFF;
+        }
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(2) .stButton > button {
+            background: var(--grass); color: #FFFFFF;
+        }
+        div[data-testid="stHorizontalBlock"] div[data-testid="column"]:nth-of-type(3) .stButton > button {
+            background: var(--grape); color: #FFFFFF;
         }
 
         div[data-testid="stTextInput"] input {
@@ -219,9 +261,10 @@ def inject_css() -> None:
             border-radius: 10px;
             margin-bottom: 0.4rem;
             font-size: 0.95rem;
-            background: #FFFFFF;
+            background: var(--card);
             border: 2px solid var(--ink);
             box-shadow: 3px 3px 0 rgba(32,27,46,0.25);
+            animation: pop-in 0.18s ease-out;
         }
         .guess-row:nth-child(odd) { transform: rotate(-0.6deg); }
         .guess-row:nth-child(even) { transform: rotate(0.6deg); }
@@ -229,7 +272,7 @@ def inject_css() -> None:
         .guess-wrong { border-color: var(--coral); background: #FFF1F0; }
 
         /* Room code shown as a rotated name-badge sticker, with little
-           washi-tape corners for a scrapbook feel */
+           washi-tape corners for a scrapbook feel, and a gentle idle wobble */
         .room-code {
             position: relative;
             display: inline-block;
@@ -239,11 +282,12 @@ def inject_css() -> None:
             text-align: center;
             padding: 0.55rem 1.4rem;
             background: var(--sunny);
+            color: var(--ink);
             border: 3px solid var(--ink);
             border-radius: 14px;
             box-shadow: 5px 5px 0 var(--ink);
-            transform: rotate(-2deg);
             margin: 0.3rem 0 1rem 0;
+            animation: wobble 5s ease-in-out infinite;
         }
         .room-code::before, .room-code::after {
             content: "";
@@ -255,6 +299,15 @@ def inject_css() -> None:
         }
         .room-code::before { left: -6px; transform: rotate(-25deg); }
         .room-code::after { right: -6px; transform: rotate(25deg); }
+
+        @keyframes wobble {
+            0%, 100% { transform: rotate(-2deg); }
+            50% { transform: rotate(2deg); }
+        }
+        @keyframes pop-in {
+            from { transform: scale(0.9); opacity: 0; }
+            to { transform: scale(1); opacity: 1; }
+        }
 
         /* Score chips */
         .score-chip {
@@ -277,15 +330,18 @@ def inject_css() -> None:
             padding: 0.15rem 0.7rem;
             border-radius: 999px;
             border: 2px solid var(--ink);
+            color: var(--ink);
             margin-left: 0.4rem;
         }
 
         /* Playful alert banners instead of the flat default look */
         div[data-testid="stAlert"] {
+            background: var(--card) !important;
             border: 2.5px solid var(--ink) !important;
             border-radius: 14px !important;
             box-shadow: 4px 4px 0 rgba(32,27,46,0.25);
             font-family: 'Quicksand', sans-serif;
+            animation: pop-in 0.2s ease-out;
         }
 
         /* Folder-tab style for the lobby's Create/Join tabs */
@@ -293,19 +349,33 @@ def inject_css() -> None:
             font-family: 'Baloo 2', sans-serif;
             font-weight: 700;
             border-radius: 10px 10px 0 0 !important;
+            color: var(--ink) !important;
         }
         div[data-baseweb="tab-highlight"] {
             background-color: var(--sky) !important;
             height: 4px !important;
         }
+        div[data-baseweb="tab-border"] { background-color: rgba(32,27,46,0.15) !important; }
 
         /* Metric cards on the game-over screen */
         div[data-testid="stMetric"] {
-            background: #FFFFFF;
+            background: var(--card);
             border: 2.5px solid var(--ink);
             border-radius: 14px;
             padding: 0.6rem 0.4rem;
             box-shadow: 4px 4px 0 var(--ink);
+        }
+
+        /* Progress bar (round timer): chunky and colourful instead of a
+           thin default blue sliver */
+        div[data-testid="stProgress"] > div > div {
+            background-color: rgba(32,27,46,0.12) !important;
+            border-radius: 999px !important;
+            height: 14px !important;
+        }
+        div[data-testid="stProgress"] > div > div > div {
+            background-color: var(--grape) !important;
+            border-radius: 999px !important;
         }
 
         /* Shrink everything a bit further on narrow / mobile screens */

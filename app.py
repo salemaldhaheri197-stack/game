@@ -90,8 +90,10 @@ def inject_css() -> None:
         }
 
         /* Sketchbook-paper backdrop: a faint dot grid, like graph paper */
-        .stApp {
+        html, body, .stApp {
             background-color: var(--paper);
+        }
+        .stApp {
             background-image: radial-gradient(rgba(32,27,46,0.09) 1.4px, transparent 1.4px);
             background-size: 22px 22px;
         }
@@ -101,11 +103,36 @@ def inject_css() -> None:
             font-family: 'Baloo 2', sans-serif !important;
         }
 
-        h1 {
+        h1, h2, h3 {
             color: var(--ink);
+        }
+        h1 {
             text-decoration: underline wavy var(--sky);
             text-decoration-thickness: 3px;
             text-underline-offset: 8px;
+        }
+
+        /* Force our ink colour everywhere text appears, regardless of the
+           visitor's light/dark system theme — Streamlit's own dark theme
+           otherwise renders body text white, which disappears on our
+           light paper background. */
+        .stApp,
+        .stApp p,
+        .stApp span,
+        .stApp label,
+        .stApp li,
+        .stApp div[data-testid="stMarkdownContainer"],
+        .stApp div[data-testid="stMarkdownContainer"] *,
+        .stApp label[data-testid="stWidgetLabel"],
+        .stApp div[data-testid="stCaptionContainer"],
+        .stApp div[data-testid="stMetricValue"],
+        .stApp div[data-testid="stMetricLabel"],
+        .stApp div[data-testid="stTextInput"] input,
+        .stApp div[data-testid="stAlertContentSuccess"],
+        .stApp div[data-testid="stAlertContentInfo"],
+        .stApp div[data-testid="stAlertContentError"],
+        .stApp div[data-testid="stAlertContentWarning"] {
+            color: var(--ink) !important;
         }
 
         .block-container, .stMainBlockContainer {

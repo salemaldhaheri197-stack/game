@@ -1,10 +1,9 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="🏎️ Multiplayer Python Racer", page_icon="🏎️", layout="centered")
+st.set_page_config(page_title="🏎️ Python Racer", page_icon="🏎️", layout="centered")
 
-st.title("🏎️ Multiplayer Python Racer")
-st.write("Play online with a friend over P2P **OR** share a keyboard locally!")
+st.title("🏎️ Python Racer")
 
 html_game = """
 <!DOCTYPE html>
@@ -12,8 +11,8 @@ html_game = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Multiplayer Python Racer</title>
-    <!-- PeerJS with WebRTC STUN support -->
+    <title>Python Racer</title>
+    <!-- PeerJS for P2P -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <style>
@@ -26,6 +25,7 @@ html_game = """
             align-items: center;
             margin: 0;
             padding: 5px;
+            overflow: hidden;
         }
         .lobby-panel {
             background-color: #16213e;
@@ -41,11 +41,11 @@ html_game = """
             border-radius: 4px;
             border: 1px solid #0f3460;
             margin-right: 5px;
-            width: 140px;
+            width: 130px;
             text-transform: uppercase;
         }
         .lobby-panel button {
-            padding: 8px 14px;
+            padding: 8px 12px;
             background-color: #e94560;
             color: white;
             border: none;
@@ -54,6 +54,8 @@ html_game = """
             font-weight: bold;
         }
         .lobby-panel button:hover { background-color: #0f3460; }
+        .mode-btn { background-color: #0f3460 !important; margin-left: 4px; }
+        .start-btn { background-color: #28a745 !important; font-size: 1.05em; padding: 8px 18px !important; }
         #status-msg { margin-top: 8px; font-weight: bold; color: #f9d56e; font-size: 0.9em; }
         
         #gameCanvas {
@@ -69,10 +71,6 @@ html_game = """
             text-align: center;
             max-width: 500px;
         }
-        .mode-btn {
-            background-color: #0f3460 !important;
-            margin-left: 5px;
-        }
     </style>
 </head>
 <body>
@@ -80,22 +78,21 @@ html_game = """
     <!-- Lobby Section -->
     <div class="lobby-panel">
         <div>
-            <strong>My Room Code:</strong> <span id="my-peer-id" style="color: #00fff5;">Generating...</span>
+            <strong>My Online Room Code:</strong> <span id="my-peer-id" style="color: #00fff5;">Generating...</span>
         </div>
         <div style="margin-top: 10px;">
+            <button class="start-btn" onclick="startSinglePlayer()">▶ START GAME</button>
             <input type="text" id="join-id-input" placeholder="ROOM CODE" />
-            <button onclick="connectToPeer()">Join Online Room</button>
-            <button class="mode-btn" onclick="startLocalMode()">Local 2P Mode</button>
+            <button onclick="connectToPeer()">Join P2P Room</button>
         </div>
-        <div id="status-msg">Share your Code with Player 2 or click "Local 2P Mode" to play on 1 keyboard!</div>
+        <div id="status-msg">Click "START GAME" for Single Player, or Join/Share a Code for Online P2P!</div>
     </div>
 
     <!-- Canvas -->
     <canvas id="gameCanvas" width="500" height="480"></canvas>
     
     <div class="controls-info">
-        🩵 <strong>P1 (Host / Left):</strong> A / D to steer | W for Nitro<br>
-        🩷 <strong>P2 (Client / Right):</strong> Left / Right Arrows to steer | Up Arrow for Nitro<br>
+        🕹️ <strong>Controls:</strong> Left / Right Arrows or A / D to steer | Up Arrow or W for Nitro<br>
         🔄 <strong>Spacebar:</strong> Restart Game
     </div>
 
@@ -113,19 +110,18 @@ html_game = """
         let isOnline = false;
         let isHost = true;
 
-        let keys = {};
+        let gameStarted = false;
+        let gameOver = false;
         let frameCount = 0;
         let level = 1;
-        let gameOver = false;
 
         let p1 = { lane: 1, y: 400, color: "#00fff5", score: 0, alive: true, boosting: false };
-        let p2 = { lane: 2, y: 400, color: "#ff00ff", score: 0, alive: true, boosting: false };
+        let p2 = { lane: 2, y: 400, color: "#ff00ff", score: 0, alive: false, boosting: false };
 
         let enemies = [];
         let coins = [];
         const enemyColors = ["#ff0055", "#ffbe00", "#00ff66"];
 
-        // Initialize PeerJS with public STUN servers for reliable cross-network connection
         function initPeer() {
             const shortId = Math.random().toString(36).substring(2, 7).toUpperCase();
             peer = new Peer(shortId, {
@@ -146,6 +142,7 @@ html_game = """
                 conn = connection;
                 isOnline = true;
                 isHost = true;
+                p2.alive = true;
                 setupConnection();
             });
 
@@ -154,10 +151,12 @@ html_game = """
             });
         }
 
-        function startLocalMode() {
+        function startSinglePlayer() {
             isOnline = false;
-            document.getElementById('status-msg').innerText = "🎮 Playing in Local 2-Player Mode (Shared Keyboard)";
-            resetGame();
+            p2.alive = false;
+            document.getElementById('status-msg').innerText = "🎮 Playing Single Player Mode";
+            resetGameState();
+            gameStarted = true;
         }
 
         function connectToPeer() {
@@ -172,13 +171,15 @@ html_game = """
             conn = peer.connect(joinId);
             isOnline = true;
             isHost = false;
+            p2.alive = true;
             setupConnection();
         }
 
         function setupConnection() {
             conn.on('open', () => {
-                document.getElementById('status-msg').innerText = "🟢 Connected Online! " + (isHost ? "You are HOST (P1)" : "You are CLIENT (P2)");
-                resetGame();
+                document.getElementById('status-msg').innerText = "🟢 Connected! " + (isHost ? "You are HOST (P1)" : "You are CLIENT (P2)");
+                resetGameState();
+                gameStarted = true;
             });
 
             conn.on('data', (data) => {
@@ -191,27 +192,30 @@ html_game = """
                     gameOver = data.gameOver;
                     p1 = data.p1;
                     p2 = data.p2;
+                    gameStarted = true;
                 } else if (data.type === 'restart') {
                     resetGameState();
+                    gameStarted = true;
                 }
             });
 
             conn.on('close', () => {
-                document.getElementById('status-msg').innerText = "🔴 Connection Lost. Switched to Local Mode.";
+                document.getElementById('status-msg').innerText = "🔴 Connection Lost. Click START GAME for Single Player.";
                 isOnline = false;
             });
         }
 
         function resetGame() {
             resetGameState();
-            if (isOnline && isHost) {
+            gameStarted = true;
+            if (isOnline && isHost && conn && conn.open) {
                 conn.send({ type: 'restart' });
             }
         }
 
         function resetGameState() {
             p1 = { lane: 1, y: 400, color: "#00fff5", score: 0, alive: true, boosting: false };
-            p2 = { lane: 2, y: 400, color: "#ff00ff", score: 0, alive: true, boosting: false };
+            p2 = { lane: 2, y: 400, color: "#ff00ff", score: 0, alive: isOnline, boosting: false };
             enemies = [];
             coins = [];
             gameOver = false;
@@ -219,68 +223,55 @@ html_game = """
             level = 1;
         }
 
-        // Controls
+        // Prevent window scroll from arrow keys
         window.addEventListener('keydown', (e) => {
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code)) {
+                e.preventDefault();
+            }
+
             if (e.code === "Space" && gameOver) {
                 resetGame();
                 return;
             }
 
-            if (!isOnline) {
-                // Local mode handling
-                if (p1.alive && !gameOver) {
-                    if ((e.key === 'a' || e.key === 'A') && p1.lane > 0) p1.lane--;
-                    if ((e.key === 'd' || e.key === 'D') && p1.lane < lanes.length - 1) p1.lane++;
-                    if (e.key === 'w' || e.key === 'W') p1.boosting = true;
-                }
-                if (p2.alive && !gameOver) {
-                    if (e.key === 'ArrowLeft' && p2.lane > 0) p2.lane--;
-                    if (e.key === 'ArrowRight' && p2.lane < lanes.length - 1) p2.lane++;
-                    if (e.key === 'ArrowUp') p2.boosting = true;
-                }
-            } else {
-                // Online P2P mode handling
-                let myP = isHost ? p1 : p2;
+            let myP = (!isOnline || isHost) ? p1 : p2;
+
+            if (gameStarted && myP.alive && !gameOver) {
                 let moved = false;
+                if ((e.code === "ArrowLeft" || e.code === "KeyA") && myP.lane > 0) { myP.lane--; moved = true; }
+                if ((e.code === "ArrowRight" || e.code === "KeyD") && myP.lane < lanes.length - 1) { myP.lane++; moved = true; }
+                if (e.code === "ArrowUp" || e.code === "KeyW") { myP.boosting = true; moved = true; }
 
-                if (myP.alive && !gameOver) {
-                    if ((e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') && myP.lane > 0) { myP.lane--; moved = true; }
-                    if ((e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') && myP.lane < lanes.length - 1) { myP.lane++; moved = true; }
-                    if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') { myP.boosting = true; moved = true; }
-
-                    if (moved && !isHost && conn && conn.open) {
-                        conn.send({ type: 'client_input', lane: p2.lane, boosting: p2.boosting });
-                    }
+                if (moved && isOnline && !isHost && conn && conn.open) {
+                    conn.send({ type: 'client_input', lane: p2.lane, boosting: p2.boosting });
                 }
             }
-        });
+        }, { passive: false });
 
         window.addEventListener('keyup', (e) => {
-            if (!isOnline) {
-                if (e.key === 'w' || e.key === 'W') p1.boosting = false;
-                if (e.key === 'ArrowUp') p2.boosting = false;
-            } else {
-                let myP = isHost ? p1 : p2;
-                if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
-                    myP.boosting = false;
-                    if (!isHost && conn && conn.open) {
-                        conn.send({ type: 'client_input', lane: p2.lane, boosting: p2.boosting });
-                    }
+            if (["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight", "Space", "KeyW", "KeyA", "KeyS", "KeyD"].includes(e.code)) {
+                e.preventDefault();
+            }
+
+            let myP = (!isOnline || isHost) ? p1 : p2;
+
+            if (gameStarted && (e.code === "ArrowUp" || e.code === "KeyW")) {
+                myP.boosting = false;
+                if (isOnline && !isHost && conn && conn.open) {
+                    conn.send({ type: 'client_input', lane: p2.lane, boosting: p2.boosting });
                 }
             }
-        });
+        }, { passive: false });
 
         function drawCar(x, y, bodyColor, isPlayer = false, boosting = false) {
             const leftX = x - carWidth / 2;
 
-            // Wheels
             ctx.fillStyle = "#111111";
             ctx.fillRect(leftX - 3, y + 8, 4, 12);
             ctx.fillRect(leftX + carWidth - 1, y + 8, 4, 12);
             ctx.fillRect(leftX - 3, y + 40, 4, 12);
             ctx.fillRect(leftX + carWidth - 1, y + 40, 4, 12);
 
-            // Boost Flame
             if (isPlayer && boosting) {
                 ctx.fillStyle = "#ff5500";
                 ctx.beginPath();
@@ -290,11 +281,9 @@ html_game = """
                 ctx.fill();
             }
 
-            // Body
             ctx.fillStyle = bodyColor;
             ctx.fillRect(leftX, y, carWidth, carHeight);
 
-            // Roof
             ctx.fillStyle = "#1a1a1a";
             ctx.fillRect(leftX + 4, y + 14, carWidth - 8, 20);
             ctx.fillStyle = bodyColor;
@@ -312,9 +301,37 @@ html_game = """
         }
 
         function updateAndRender() {
-            // Physics loop runs on Host or in Local Mode
+            ctx.fillStyle = "#2d2d2d";
+            ctx.fillRect(0, 0, 500, 480);
+
+            // Lane Markings
+            ctx.strokeStyle = "#ffffff";
+            ctx.setLineDash([20, 15]);
+            ctx.beginPath();
+            [125, 250, 375].forEach(x => {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 480);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            if (!gameStarted) {
+                // Title Screen Overlay
+                ctx.fillStyle = "rgba(0, 0, 0, 0.65)";
+                ctx.fillRect(0, 0, 500, 480);
+                ctx.fillStyle = "#00fff5";
+                ctx.font = "bold 30px Arial";
+                ctx.fillText("PYTHON RACER", 130, 210);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "16px Arial";
+                ctx.fillText("Click 'START GAME' or Join Online Room", 100, 250);
+                requestAnimationFrame(updateAndRender);
+                return;
+            }
+
             if (!isOnline || isHost) {
                 if (!gameOver) {
+                    let activePlayers = [p1, p2].filter(p => p.alive);
                     let maxScore = Math.max(p1.score, p2.score);
                     level = Math.floor(maxScore / 100) + 1;
                     let baseSpeed = 5 + (level * 1.1);
@@ -362,13 +379,12 @@ html_game = """
                         if (enemies[i].y > 500) {
                             enemies.splice(i, 1);
                             if (p1.alive) p1.score += p1.boosting ? 20 : 10;
-                            if (p2.alive) p2.score += p2.boosting ? 20 : 10;
+                            if (p2.alive && isOnline) p2.score += p2.boosting ? 20 : 10;
                         }
                     }
 
-                    if (!p1.alive && !p2.alive) gameOver = true;
+                    if (!p1.alive && (!isOnline || !p2.alive)) gameOver = true;
 
-                    // Sync state to Client if online
                     if (isOnline && conn && conn.open) {
                         conn.send({
                             type: 'host_sync',
@@ -382,42 +398,29 @@ html_game = """
                 }
             }
 
-            // Render
-            ctx.fillStyle = "#2d2d2d";
-            ctx.fillRect(0, 0, 500, 480);
-
-            // Lane Markings
-            ctx.strokeStyle = "#ffffff";
-            ctx.setLineDash([20, 15]);
-            ctx.beginPath();
-            [125, 250, 375].forEach(x => {
-                ctx.moveTo(x, 0);
-                ctx.lineTo(x, 480);
-            });
-            ctx.stroke();
-            ctx.setLineDash([]);
-
             // Draw Entities
             coins.forEach(c => drawCoin(c.x, c.y));
             enemies.forEach(e => drawCar(e.x, e.y, e.color));
 
             if (p1.alive) drawCar(lanes[p1.lane], p1.y, p1.color, true, p1.boosting);
-            if (p2.alive) drawCar(lanes[p2.lane], p2.y, p2.color, true, p2.boosting);
+            if (isOnline && p2.alive) drawCar(lanes[p2.lane], p2.y, p2.color, true, p2.boosting);
 
             // HUD
             ctx.font = "bold 13px Arial";
             ctx.fillStyle = p1.color;
-            ctx.fillText(`P1: ${p1.score} pts`, 15, 25);
+            ctx.fillText(`P1 Score: ${p1.score}`, 15, 25);
 
-            ctx.fillStyle = p2.color;
-            ctx.fillText(`P2: ${p2.score} pts`, 380, 25);
+            if (isOnline) {
+                ctx.fillStyle = p2.color;
+                ctx.fillText(`P2 Score: ${p2.score}`, 380, 25);
+            }
 
             if (gameOver) {
                 ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
                 ctx.fillRect(0, 0, 500, 480);
                 ctx.fillStyle = "#ff0055";
                 ctx.font = "bold 28px Arial";
-                ctx.fillText("BOTH PLAYERS CRASHED", 85, 220);
+                ctx.fillText(isOnline ? "BOTH PLAYERS CRASHED" : "GAME OVER", isOnline ? 85 : 160, 220);
                 ctx.fillStyle = "#ffffff";
                 ctx.font = "16px Arial";
                 ctx.fillText("Press SPACEBAR to Restart", 150, 260);

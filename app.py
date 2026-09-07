@@ -1,22 +1,19 @@
 import streamlit as st
 import streamlit.components.v1 as components
 
-st.set_page_config(page_title="P2P Multiplayer Python Racer", page_icon="🏎️", layout="centered")
+st.set_page_config(page_title="🏎️ Multiplayer Python Racer", page_icon="🏎️", layout="centered")
 
-st.title("🏎️ P2P Multiplayer Python Racer")
-st.write("Play online with a friend over a direct Peer-to-Peer (P2P) connection!")
+st.title("🏎️ Multiplayer Python Racer")
+st.write("Play online with a friend over P2P **OR** share a keyboard locally!")
 
-html_p2p_game = """
+html_game = """
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>P2P Python Racer</title>
-    <!-- PyScript CDN -->
-    <link rel="stylesheet" href="https://pyscript.net/releases/2023.05.1/pyscript.css" />
-    <script defer src="https://pyscript.net/releases/2023.05.1/pyscript.js"></script>
-    <!-- PeerJS for P2P Networking -->
+    <title>Multiplayer Python Racer</title>
+    <!-- PeerJS with WebRTC STUN support -->
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
 
     <style>
@@ -32,12 +29,12 @@ html_p2p_game = """
         }
         .lobby-panel {
             background-color: #16213e;
-            padding: 15px 25px;
+            padding: 12px 20px;
             border-radius: 8px;
-            margin-bottom: 15px;
+            margin-bottom: 12px;
             box-shadow: 0 4px 8px rgba(0,0,0,0.3);
             text-align: center;
-            width: 460px;
+            width: 480px;
         }
         .lobby-panel input {
             padding: 8px;
@@ -48,7 +45,7 @@ html_p2p_game = """
             text-transform: uppercase;
         }
         .lobby-panel button {
-            padding: 8px 15px;
+            padding: 8px 14px;
             background-color: #e94560;
             color: white;
             border: none;
@@ -57,12 +54,13 @@ html_p2p_game = """
             font-weight: bold;
         }
         .lobby-panel button:hover { background-color: #0f3460; }
-        #status-msg { margin-top: 10px; font-weight: bold; color: #f9d56e; }
+        #status-msg { margin-top: 8px; font-weight: bold; color: #f9d56e; font-size: 0.9em; }
         
         #gameCanvas {
             border: 4px solid #0f3460;
-            background-color: #333;
+            background-color: #2d2d2d;
             border-radius: 8px;
+            display: block;
         }
         .controls-info {
             margin-top: 10px;
@@ -71,8 +69,10 @@ html_p2p_game = """
             text-align: center;
             max-width: 500px;
         }
-        .p1-color { color: #00fff5; font-weight: bold; }
-        .p2-color { color: #ff00ff; font-weight: bold; }
+        .mode-btn {
+            background-color: #0f3460 !important;
+            margin-left: 5px;
+        }
     </style>
 </head>
 <body>
@@ -80,332 +80,359 @@ html_p2p_game = """
     <!-- Lobby Section -->
     <div class="lobby-panel">
         <div>
-            <strong>My Room ID:</strong> <span id="my-peer-id">Generating...</span>
+            <strong>My Room Code:</strong> <span id="my-peer-id" style="color: #00fff5;">Generating...</span>
         </div>
         <div style="margin-top: 10px;">
             <input type="text" id="join-id-input" placeholder="ROOM CODE" />
-            <button onclick="connectToPeer()">Join Room</button>
+            <button onclick="connectToPeer()">Join Online Room</button>
+            <button class="mode-btn" onclick="startLocalMode()">Local 2P Mode</button>
         </div>
-        <div id="status-msg">Waiting for connection...</div>
+        <div id="status-msg">Share your Code with Player 2 or click "Local 2P Mode" to play on 1 keyboard!</div>
     </div>
 
     <!-- Canvas -->
     <canvas id="gameCanvas" width="500" height="480"></canvas>
     
     <div class="controls-info">
-        👈 / 👉 <strong>Left / Right Arrows</strong> or <strong>A / D</strong> to steer | ⚡ <strong>Up Arrow / W</strong> for Nitro Boost<br>
-        🪙 Collect Coins | 🔄 <strong>Spacebar</strong> to Restart
+        🩵 <strong>P1 (Host / Left):</strong> A / D to steer | W for Nitro<br>
+        🩷 <strong>P2 (Client / Right):</strong> Left / Right Arrows to steer | Up Arrow for Nitro<br>
+        🔄 <strong>Spacebar:</strong> Restart Game
     </div>
 
-    <!-- P2P JavaScript Layer -->
     <script>
+        const canvas = document.getElementById("gameCanvas");
+        const ctx = canvas.getContext("2d");
+
+        const lanes = [70, 180, 310, 420];
+        const carWidth = 34;
+        const carHeight = 58;
+
         let peer = null;
         let conn = null;
-        let isHost = false;
-        let p2pDataHandler = null;
+        let myId = "";
+        let isOnline = false;
+        let isHost = true;
 
-        // Initialize PeerJS
+        let keys = {};
+        let frameCount = 0;
+        let level = 1;
+        let gameOver = false;
+
+        let p1 = { lane: 1, y: 400, color: "#00fff5", score: 0, alive: true, boosting: false };
+        let p2 = { lane: 2, y: 400, color: "#ff00ff", score: 0, alive: true, boosting: false };
+
+        let enemies = [];
+        let coins = [];
+        const enemyColors = ["#ff0055", "#ffbe00", "#00ff66"];
+
+        // Initialize PeerJS with public STUN servers for reliable cross-network connection
         function initPeer() {
-            // Generate a short 5-character ID
             const shortId = Math.random().toString(36).substring(2, 7).toUpperCase();
-            peer = new Peer(shortId);
+            peer = new Peer(shortId, {
+                config: {
+                    iceServers: [
+                        { urls: 'stun:stun.l.google.com:19302' },
+                        { urls: 'stun:stun1.l.google.com:19302' }
+                    ]
+                }
+            });
 
             peer.on('open', (id) => {
+                myId = id;
                 document.getElementById('my-peer-id').innerText = id;
             });
 
-            // Handle incoming connections (When acting as Host)
             peer.on('connection', (connection) => {
                 conn = connection;
+                isOnline = true;
                 isHost = true;
                 setupConnection();
             });
+
+            peer.on('error', (err) => {
+                document.getElementById('status-msg').innerText = "⚠️ Network alert: " + err.type;
+            });
         }
 
-        // Join another player's room
+        function startLocalMode() {
+            isOnline = false;
+            document.getElementById('status-msg').innerText = "🎮 Playing in Local 2-Player Mode (Shared Keyboard)";
+            resetGame();
+        }
+
         function connectToPeer() {
             const joinId = document.getElementById('join-id-input').value.trim().toUpperCase();
             if (!joinId) return;
+            if (joinId === myId) {
+                document.getElementById('status-msg').innerText = "❌ Enter a different player's Room Code!";
+                return;
+            }
             
             document.getElementById('status-msg').innerText = "Connecting to " + joinId + "...";
             conn = peer.connect(joinId);
+            isOnline = true;
             isHost = false;
             setupConnection();
         }
 
         function setupConnection() {
             conn.on('open', () => {
-                document.getElementById('status-msg').innerText = "🟢 Connected! " + (isHost ? "You are HOST (P1)" : "You are CLIENT (P2)");
+                document.getElementById('status-msg').innerText = "🟢 Connected Online! " + (isHost ? "You are HOST (P1)" : "You are CLIENT (P2)");
+                resetGame();
             });
 
             conn.on('data', (data) => {
-                if (p2pDataHandler) {
-                    p2pDataHandler(data);
+                if (data.type === 'client_input') {
+                    p2.lane = data.lane;
+                    p2.boosting = data.boosting;
+                } else if (data.type === 'host_sync') {
+                    enemies = data.enemies;
+                    coins = data.coins;
+                    gameOver = data.gameOver;
+                    p1 = data.p1;
+                    p2 = data.p2;
+                } else if (data.type === 'restart') {
+                    resetGameState();
                 }
             });
 
             conn.on('close', () => {
-                document.getElementById('status-msg').innerText = "🔴 Connection Lost.";
+                document.getElementById('status-msg').innerText = "🔴 Connection Lost. Switched to Local Mode.";
+                isOnline = false;
             });
         }
 
-        function sendP2PData(data) {
-            if (conn && conn.open) {
-                conn.send(data);
+        function resetGame() {
+            resetGameState();
+            if (isOnline && isHost) {
+                conn.send({ type: 'restart' });
             }
         }
 
-        window.onload = initPeer;
+        function resetGameState() {
+            p1 = { lane: 1, y: 400, color: "#00fff5", score: 0, alive: true, boosting: false };
+            p2 = { lane: 2, y: 400, color: "#ff00ff", score: 0, alive: true, boosting: false };
+            enemies = [];
+            coins = [];
+            gameOver = false;
+            frameCount = 0;
+            level = 1;
+        }
+
+        // Controls
+        window.addEventListener('keydown', (e) => {
+            if (e.code === "Space" && gameOver) {
+                resetGame();
+                return;
+            }
+
+            if (!isOnline) {
+                // Local mode handling
+                if (p1.alive && !gameOver) {
+                    if ((e.key === 'a' || e.key === 'A') && p1.lane > 0) p1.lane--;
+                    if ((e.key === 'd' || e.key === 'D') && p1.lane < lanes.length - 1) p1.lane++;
+                    if (e.key === 'w' || e.key === 'W') p1.boosting = true;
+                }
+                if (p2.alive && !gameOver) {
+                    if (e.key === 'ArrowLeft' && p2.lane > 0) p2.lane--;
+                    if (e.key === 'ArrowRight' && p2.lane < lanes.length - 1) p2.lane++;
+                    if (e.key === 'ArrowUp') p2.boosting = true;
+                }
+            } else {
+                // Online P2P mode handling
+                let myP = isHost ? p1 : p2;
+                let moved = false;
+
+                if (myP.alive && !gameOver) {
+                    if ((e.key === 'a' || e.key === 'A' || e.key === 'ArrowLeft') && myP.lane > 0) { myP.lane--; moved = true; }
+                    if ((e.key === 'd' || e.key === 'D' || e.key === 'ArrowRight') && myP.lane < lanes.length - 1) { myP.lane++; moved = true; }
+                    if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') { myP.boosting = true; moved = true; }
+
+                    if (moved && !isHost && conn && conn.open) {
+                        conn.send({ type: 'client_input', lane: p2.lane, boosting: p2.boosting });
+                    }
+                }
+            }
+        });
+
+        window.addEventListener('keyup', (e) => {
+            if (!isOnline) {
+                if (e.key === 'w' || e.key === 'W') p1.boosting = false;
+                if (e.key === 'ArrowUp') p2.boosting = false;
+            } else {
+                let myP = isHost ? p1 : p2;
+                if (e.key === 'w' || e.key === 'W' || e.key === 'ArrowUp') {
+                    myP.boosting = false;
+                    if (!isHost && conn && conn.open) {
+                        conn.send({ type: 'client_input', lane: p2.lane, boosting: p2.boosting });
+                    }
+                }
+            }
+        });
+
+        function drawCar(x, y, bodyColor, isPlayer = false, boosting = false) {
+            const leftX = x - carWidth / 2;
+
+            // Wheels
+            ctx.fillStyle = "#111111";
+            ctx.fillRect(leftX - 3, y + 8, 4, 12);
+            ctx.fillRect(leftX + carWidth - 1, y + 8, 4, 12);
+            ctx.fillRect(leftX - 3, y + 40, 4, 12);
+            ctx.fillRect(leftX + carWidth - 1, y + 40, 4, 12);
+
+            // Boost Flame
+            if (isPlayer && boosting) {
+                ctx.fillStyle = "#ff5500";
+                ctx.beginPath();
+                ctx.moveTo(leftX + 8, y + carHeight);
+                ctx.lineTo(leftX + carWidth / 2, y + carHeight + Math.random() * 10 + 15);
+                ctx.lineTo(leftX + carWidth - 8, y + carHeight);
+                ctx.fill();
+            }
+
+            // Body
+            ctx.fillStyle = bodyColor;
+            ctx.fillRect(leftX, y, carWidth, carHeight);
+
+            // Roof
+            ctx.fillStyle = "#1a1a1a";
+            ctx.fillRect(leftX + 4, y + 14, carWidth - 8, 20);
+            ctx.fillStyle = bodyColor;
+            ctx.fillRect(leftX + 6, y + 18, carWidth - 12, 10);
+        }
+
+        function drawCoin(x, y) {
+            ctx.fillStyle = "#ffd700";
+            ctx.beginPath();
+            ctx.arc(x, y, 10, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = "#b8860b";
+            ctx.lineWidth = 2;
+            ctx.stroke();
+        }
+
+        function updateAndRender() {
+            // Physics loop runs on Host or in Local Mode
+            if (!isOnline || isHost) {
+                if (!gameOver) {
+                    let maxScore = Math.max(p1.score, p2.score);
+                    level = Math.floor(maxScore / 100) + 1;
+                    let baseSpeed = 5 + (level * 1.1);
+
+                    let anyBoost = (p1.alive && p1.boosting) || (p2.alive && p2.boosting);
+                    let speed = baseSpeed * (anyBoost ? 1.6 : 1.0);
+
+                    frameCount++;
+                    if (frameCount % Math.max(16, 40 - level * 2) === 0) {
+                        enemies.push({
+                            x: lanes[Math.floor(Math.random() * lanes.length)],
+                            y: -60,
+                            color: enemyColors[Math.floor(Math.random() * enemyColors.length)]
+                        });
+                    }
+
+                    if (frameCount % 85 === 0) {
+                        coins.push({
+                            x: lanes[Math.floor(Math.random() * lanes.length)],
+                            y: -30
+                        });
+                    }
+
+                    // Move Coins
+                    for (let i = coins.length - 1; i >= 0; i--) {
+                        coins[i].y += speed;
+                        [p1, p2].forEach(p => {
+                            if (p.alive && Math.abs(lanes[p.lane] - coins[i].x) < 25 && Math.abs(p.y - coins[i].y) < 30) {
+                                p.score += 25;
+                                coins.splice(i, 1);
+                            }
+                        });
+                        if (coins[i] && coins[i].y > 520) coins.splice(i, 1);
+                    }
+
+                    // Move Enemies
+                    for (let i = enemies.length - 1; i >= 0; i--) {
+                        enemies[i].y += speed;
+                        [p1, p2].forEach(p => {
+                            if (p.alive && Math.abs(lanes[p.lane] - enemies[i].x) < 26 && Math.abs(p.y - enemies[i].y) < 45) {
+                                p.alive = false;
+                            }
+                        });
+
+                        if (enemies[i].y > 500) {
+                            enemies.splice(i, 1);
+                            if (p1.alive) p1.score += p1.boosting ? 20 : 10;
+                            if (p2.alive) p2.score += p2.boosting ? 20 : 10;
+                        }
+                    }
+
+                    if (!p1.alive && !p2.alive) gameOver = true;
+
+                    // Sync state to Client if online
+                    if (isOnline && conn && conn.open) {
+                        conn.send({
+                            type: 'host_sync',
+                            enemies: enemies,
+                            coins: coins,
+                            gameOver: gameOver,
+                            p1: p1,
+                            p2: p2
+                        });
+                    }
+                }
+            }
+
+            // Render
+            ctx.fillStyle = "#2d2d2d";
+            ctx.fillRect(0, 0, 500, 480);
+
+            // Lane Markings
+            ctx.strokeStyle = "#ffffff";
+            ctx.setLineDash([20, 15]);
+            ctx.beginPath();
+            [125, 250, 375].forEach(x => {
+                ctx.moveTo(x, 0);
+                ctx.lineTo(x, 480);
+            });
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            // Draw Entities
+            coins.forEach(c => drawCoin(c.x, c.y));
+            enemies.forEach(e => drawCar(e.x, e.y, e.color));
+
+            if (p1.alive) drawCar(lanes[p1.lane], p1.y, p1.color, true, p1.boosting);
+            if (p2.alive) drawCar(lanes[p2.lane], p2.y, p2.color, true, p2.boosting);
+
+            // HUD
+            ctx.font = "bold 13px Arial";
+            ctx.fillStyle = p1.color;
+            ctx.fillText(`P1: ${p1.score} pts`, 15, 25);
+
+            ctx.fillStyle = p2.color;
+            ctx.fillText(`P2: ${p2.score} pts`, 380, 25);
+
+            if (gameOver) {
+                ctx.fillStyle = "rgba(0, 0, 0, 0.75)";
+                ctx.fillRect(0, 0, 500, 480);
+                ctx.fillStyle = "#ff0055";
+                ctx.font = "bold 28px Arial";
+                ctx.fillText("BOTH PLAYERS CRASHED", 85, 220);
+                ctx.fillStyle = "#ffffff";
+                ctx.font = "16px Arial";
+                ctx.fillText("Press SPACEBAR to Restart", 150, 260);
+            }
+
+            requestAnimationFrame(updateAndRender);
+        }
+
+        window.onload = () => {
+            initPeer();
+            requestAnimationFrame(updateAndRender);
+        };
     </script>
-
-    <!-- Game Engine -->
-    <py-script>
-import random
-import math
-import json
-from js import document, window, sendP2PData
-from pyodide.ffi import create_proxy
-
-canvas = document.getElementById("gameCanvas")
-ctx = canvas.getContext("2d")
-
-lanes = [70, 180, 310, 420]
-car_width = 34
-car_height = 58
-
-# Local and Remote Player States
-my_player_num = 1  # 1 for Host, 2 for Client
-p1 = {"lane": 1, "y": 400, "color": "#00fff5", "score": 0, "alive": True, "boosting": False}
-p2 = {"lane": 2, "y": 400, "color": "#ff00ff", "score": 0, "alive": True, "boosting": False}
-
-enemies = []
-coins = []
-enemy_colors = ["#ff0055", "#ffbe00", "#00ff66"]
-
-level = 1
-frame_count = 0
-game_over = False
-
-def handle_remote_data(data_json):
-    global enemies, coins, game_over, level
-    data = json.loads(data_json)
-    
-    # Received state sync from opponent
-    if data["type"] == "player_input":
-        remote_p = p2 if data["player"] == 2 else p1
-        remote_p["lane"] = data["lane"]
-        remote_p["boosting"] = data["boosting"]
-        
-    elif data["type"] == "host_sync":
-        # Host syncs authoritative world state to client
-        global enemies, coins, game_over
-        enemies = data["enemies"]
-        coins = data["coins"]
-        game_over = data["game_over"]
-        p1["score"] = data["p1_score"]
-        p2["score"] = data["p2_score"]
-        p1["alive"] = data["p1_alive"]
-        p2["alive"] = data["p2_alive"]
-
-# Register Python function to JavaScript
-window.p2pDataHandler = create_proxy(handle_remote_data)
-
-def draw_car(x, y, body_color, is_player=False, boosting=False):
-    left_x = x - car_width // 2
-    
-    # Wheels
-    ctx.fillStyle = "#111111"
-    ctx.fillRect(left_x - 3, y + 8, 4, 12)
-    ctx.fillRect(left_x + car_width - 1, y + 8, 4, 12)
-    ctx.fillRect(left_x - 3, y + 40, 4, 12)
-    ctx.fillRect(left_x + car_width - 1, y + 40, 4, 12)
-
-    # Nitro Flame
-    if is_player and boosting:
-        ctx.fillStyle = "#ff5500"
-        ctx.beginPath()
-        ctx.moveTo(left_x + 8, y + car_height)
-        ctx.lineTo(left_x + car_width // 2, y + car_height + random.randint(15, 25))
-        ctx.lineTo(left_x + car_width - 8, y + car_height)
-        ctx.fill()
-
-    # Main Body
-    ctx.fillStyle = body_color
-    ctx.fillRect(left_x, y, car_width, car_height)
-
-    # Windshield & Roof
-    ctx.fillStyle = "#1a1a1a"
-    ctx.fillRect(left_x + 4, y + 14, car_width - 8, 20)
-    ctx.fillStyle = body_color
-    ctx.fillRect(left_x + 6, y + 18, car_width - 12, 10)
-
-    # Lights
-    if is_player:
-        ctx.fillStyle = "#ffff00"
-        ctx.fillRect(left_x + 2, y + 2, 5, 4)
-        ctx.fillRect(left_x + car_width - 7, y + 2, 5, 4)
-    else:
-        ctx.fillStyle = "#ffff00"
-        ctx.fillRect(left_x + 2, y + car_height - 5, 5, 4)
-        ctx.fillRect(left_x + car_width - 7, y + car_height - 5, 5, 4)
-
-def draw_coin(x, y):
-    ctx.fillStyle = "#ffd700"
-    ctx.beginPath()
-    ctx.arc(x, y, 11, 0, math.pi * 2)
-    ctx.fill()
-    ctx.strokeStyle = "#b8860b"
-    ctx.lineWidth = 2
-    ctx.stroke()
-
-def send_my_state():
-    is_host = window.isHost
-    my_p_num = 1 if is_host else 2
-    my_p = p1 if is_host else p2
-    
-    msg = json.dumps({
-        "type": "player_input",
-        "player": my_p_num,
-        "lane": my_p["lane"],
-        "boosting": my_p["boosting"]
-    })
-    sendP2PData(msg)
-
-def on_key_down(event):
-    is_host = window.isHost
-    my_p = p1 if is_host else p2
-
-    if my_p["alive"] and not game_over:
-        if event.key in ["ArrowLeft", "a", "A"] and my_p["lane"] > 0:
-            my_p["lane"] -= 1
-            send_my_state()
-        elif event.key in ["ArrowRight", "d", "D"] and my_p["lane"] < len(lanes) - 1:
-            my_p["lane"] += 1
-            send_my_state()
-        elif event.key in ["ArrowUp", "w", "W"]:
-            my_p["boosting"] = True
-            send_my_state()
-
-def on_key_up(event):
-    is_host = window.isHost
-    my_p = p1 if is_host else p2
-    if event.key in ["ArrowUp", "w", "W"]:
-        my_p["boosting"] = False
-        send_my_state()
-
-document.addEventListener("keydown", create_proxy(on_key_down))
-document.addEventListener("keyup", create_proxy(on_key_up))
-
-def game_loop(timestamp=None):
-    global level, frame_count, game_over, enemies, coins
-
-    is_host = window.isHost
-
-    # 1. Host runs physics & collision logic
-    if is_host and not game_over:
-        max_score = max(p1["score"], p2["score"])
-        level = (max_score // 100) + 1
-        base_speed = 6 + (level * 1.2)
-        
-        any_boost = (p1["alive"] and p1["boosting"]) or (p2["alive"] and p2["boosting"])
-        effective_speed = base_speed * (1.7 if any_boost else 1.0)
-
-        # Spawning
-        frame_count += 1
-        if frame_count % max(16, int(40 - level * 2)) == 0:
-            x = random.choice(lanes)
-            color = random.choice(enemy_colors)
-            enemies.append({"x": x, "y": -60, "color": color})
-
-        if frame_count % 90 == 0:
-            coins.append({"x": random.choice(lanes), "y": -30})
-
-        # Move Coins
-        for coin in coins[:]:
-            coin["y"] += effective_speed
-            for p in [p1, p2]:
-                if p["alive"] and abs(lanes[p["lane"]] - coin["x"]) < 25 and abs(p["y"] - coin["y"]) < 30:
-                    if coin in coins: coins.remove(coin)
-                    p["score"] += 25
-            if coin["y"] > 520 and coin in coins:
-                coins.remove(coin)
-
-        # Move Enemies & Check Collisions
-        for enemy in enemies[:]:
-            enemy["y"] += effective_speed
-            for p in [p1, p2]:
-                if p["alive"] and abs(lanes[p["lane"]] - enemy["x"]) < 28 and abs(p["y"] - enemy["y"]) < 45:
-                    p["alive"] = False
-
-            if enemy["y"] > 500:
-                enemies.remove(enemy)
-                for p in [p1, p2]:
-                    if p["alive"]:
-                        p["score"] += 20 if p["boosting"] else 10
-
-        if not p1["alive"] and not p2["alive"]:
-            game_over = True
-
-        # Broadcast world state from Host to Client
-        sync_msg = json.dumps({
-            "type": "host_sync",
-            "enemies": enemies,
-            "coins": coins,
-            "game_over": game_over,
-            "p1_score": p1["score"],
-            "p2_score": p2["score"],
-            "p1_alive": p1["alive"],
-            "p2_alive": p2["alive"]
-        })
-        sendP2PData(sync_msg)
-
-    # 2. Rendering Phase (Both Host and Client)
-    ctx.fillStyle = "#2d2d2d"
-    ctx.fillRect(0, 0, 500, 480)
-
-    # Road Dividers
-    ctx.strokeStyle = "#ffffff"
-    ctx.setLineDash([20, 15])
-    ctx.beginPath()
-    for divider_x in [125, 250, 375]:
-        ctx.moveTo(divider_x, 0)
-        ctx.lineTo(divider_x, 480)
-    ctx.stroke()
-    ctx.setLineDash([])
-
-    # Draw Coins & Enemies
-    for coin in coins:
-        draw_coin(coin["x"], coin["y"])
-    for enemy in enemies:
-        draw_car(enemy["x"], enemy["y"], enemy["color"], is_player=False)
-
-    # Draw Players
-    if p1["alive"]:
-        draw_car(lanes[p1["lane"]], p1["y"], p1["color"], is_player=True, boosting=p1["boosting"])
-    if p2["alive"]:
-        draw_car(lanes[p2["lane"]], p2["y"], p2["color"], is_player=True, boosting=p2["boosting"])
-
-    # HUD
-    ctx.font = "bold 13px Arial"
-    ctx.fillStyle = p1["color"]
-    ctx.fillText(f"P1 (Host): {p1['score']} pts", 15, 25)
-    
-    ctx.fillStyle = p2["color"]
-    ctx.fillText(f"P2 (Client): {p2['score']} pts", 350, 25)
-
-    if game_over:
-        ctx.fillStyle = "rgba(0, 0, 0, 0.75)"
-        ctx.fillRect(0, 0, 500, 480)
-        ctx.fillStyle = "#ff0055"
-        ctx.font = "bold 32px Arial"
-        ctx.fillText("BOTH PLAYERS CRASHED", 65, 220)
-
-    window.requestAnimationFrame(create_proxy(game_loop))
-
-game_loop()
-    </py-script>
 </body>
 </html>
 """
 
-components.html(html_p2p_game, height=680, scrolling=False)
+components.html(html_game, height=680, scrolling=False)

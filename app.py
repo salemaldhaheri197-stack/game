@@ -108,16 +108,20 @@ def inject_css() -> None:
             text-underline-offset: 8px;
         }
 
-        .block-container {
+        .block-container, .stMainBlockContainer {
             padding-top: 1.5rem;
             padding-bottom: 2rem;
-            max-width: 760px;
+            max-width: 760px !important;
         }
 
         /* Chunky "sticker" buttons: thick ink border + hard offset shadow that
-           grows on hover, instead of a soft SaaS drop-shadow */
+           grows on hover, instead of a soft SaaS drop-shadow.
+           Streamlit wraps the real <button> in a div[data-testid="stButton"];
+           target both that and the older .stButton class for safety, and
+           force full width since Streamlit's own rules can win the width tie. */
+        div[data-testid="stButton"] > button,
         .stButton > button {
-            width: 100%;
+            width: 100% !important;
             padding: 0.6rem 1rem;
             font-size: 1.05rem;
             font-weight: 700;
@@ -128,12 +132,14 @@ def inject_css() -> None:
             box-shadow: 4px 4px 0 var(--ink);
             transition: transform 0.12s ease, box-shadow 0.12s ease;
         }
+        div[data-testid="stButton"] > button:hover,
         .stButton > button:hover {
             background: var(--sky);
             color: var(--ink);
             transform: translate(-2px, -2px);
             box-shadow: 6px 6px 0 var(--ink);
         }
+        div[data-testid="stButton"] > button:active,
         .stButton > button:active {
             transform: translate(1px, 1px);
             box-shadow: 2px 2px 0 var(--ink);

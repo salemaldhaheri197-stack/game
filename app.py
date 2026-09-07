@@ -42,14 +42,28 @@ from streamlit_drawable_canvas import st_canvas
 DB_PATH = "doodle_duel.db"
 _DB_LOCK = threading.Lock()
 
+ROUNDS_PER_PLAYER = 5
+TOTAL_ROUNDS = ROUNDS_PER_PLAYER * 2  # each of the two players draws 5 times
+AUTO_ADVANCE_SECONDS = 4  # pause after a correct guess before the next round starts
+
 WORD_BANK = [
-    "cat", "dog", "elephant", "guitar", "pizza", "rocket", "sunflower",
-    "umbrella", "castle", "dinosaur", "bicycle", "octopus", "rainbow",
-    "sandwich", "spider", "volcano", "airplane", "penguin", "robot",
-    "mountain", "butterfly", "lighthouse", "snowman", "kangaroo",
-    "sailboat", "cactus", "campfire", "dragon", "helicopter", "jellyfish",
-    "ladder", "mushroom", "pretzel", "scarecrow", "telescope", "waterfall",
-    "wizard", "koala", "pineapple", "unicorn",
+    # Famous real people — historical & pop-culture icons
+    "Albert Einstein", "Leonardo da Vinci", "William Shakespeare", "Cleopatra",
+    "Isaac Newton", "Napoleon Bonaparte", "Mahatma Gandhi", "Nelson Mandela",
+    "Marie Curie", "Muhammad Ali", "Michael Jackson", "Elvis Presley",
+    "Charlie Chaplin", "Bruce Lee", "Pablo Picasso", "Walt Disney",
+    "Steve Jobs", "Abraham Lincoln", "Bob Marley", "Cristiano Ronaldo",
+
+    # Famous movie / TV characters
+    "Spider-Man", "Batman", "Superman", "Iron Man", "Wonder Woman",
+    "Darth Vader", "Yoda", "Luke Skywalker", "James Bond", "Indiana Jones",
+    "Sherlock Holmes", "Harry Potter", "Dracula", "Frankenstein's Monster",
+    "King Kong", "Godzilla", "The Joker", "Jack Sparrow", "Forrest Gump",
+
+    # Widely known animated / cartoon characters
+    "Mickey Mouse", "SpongeBob SquarePants", "Homer Simpson", "Shrek",
+    "Winnie the Pooh", "Elsa", "Woody", "Buzz Lightyear", "Simba",
+    "Pikachu", "Mario", "Sonic the Hedgehog", "Scooby-Doo", "Bugs Bunny",
 ]
 
 st.set_page_config(page_title="Doodle Duel", page_icon="✏️", layout="centered")
@@ -63,52 +77,202 @@ def inject_css() -> None:
     st.markdown(
         """
         <style>
+        @import url('https://fonts.googleapis.com/css2?family=Baloo+2:wght@500;700;800&family=Quicksand:wght@500;600;700&display=swap');
+
+        :root {
+            --ink: #201B2E;
+            --paper: #FFF8EC;
+            --coral: #FF6B6B;
+            --sunny: #FFC93C;
+            --sky: #3DB4F2;
+            --grass: #3FC97C;
+            --grape: #9B6BFF;
+        }
+
+        /* Sketchbook-paper backdrop: a faint dot grid, like graph paper */
+        .stApp {
+            background-color: var(--paper);
+            background-image: radial-gradient(rgba(32,27,46,0.09) 1.4px, transparent 1.4px);
+            background-size: 22px 22px;
+        }
+
+        html, body, [class*="css"] { font-family: 'Quicksand', sans-serif; }
+        h1, h2, h3, .room-code, .stButton > button, .score-chip {
+            font-family: 'Baloo 2', sans-serif !important;
+        }
+
+        h1 {
+            color: var(--ink);
+            text-decoration: underline wavy var(--sky);
+            text-decoration-thickness: 3px;
+            text-underline-offset: 8px;
+        }
+
         .block-container {
             padding-top: 1.5rem;
             padding-bottom: 2rem;
             max-width: 760px;
         }
+
+        /* Chunky "sticker" buttons: thick ink border + hard offset shadow that
+           grows on hover, instead of a soft SaaS drop-shadow */
         .stButton > button {
             width: 100%;
             padding: 0.6rem 1rem;
-            font-size: 1rem;
-            border-radius: 10px;
+            font-size: 1.05rem;
+            font-weight: 700;
+            color: var(--ink);
+            background: #FFFFFF;
+            border: 2.5px solid var(--ink);
+            border-radius: 14px;
+            box-shadow: 4px 4px 0 var(--ink);
+            transition: transform 0.12s ease, box-shadow 0.12s ease;
         }
+        .stButton > button:hover {
+            background: var(--sky);
+            color: var(--ink);
+            transform: translate(-2px, -2px);
+            box-shadow: 6px 6px 0 var(--ink);
+        }
+        .stButton > button:active {
+            transform: translate(1px, 1px);
+            box-shadow: 2px 2px 0 var(--ink);
+        }
+
         div[data-testid="stTextInput"] input {
             font-size: 1rem;
+            font-family: 'Quicksand', sans-serif;
+            border: 2px solid var(--ink) !important;
+            border-radius: 10px !important;
         }
+
+        /* Guess feed: little alternating-tilt paper strips */
         .guess-row {
-            padding: 0.35rem 0.6rem;
-            border-radius: 8px;
-            margin-bottom: 0.3rem;
-            font-size: 0.95rem;
-        }
-        .guess-correct { background: #d4f7dc; }
-        .guess-wrong { background: #f2f2f2; }
-        .room-code {
-            font-size: 1.6rem;
-            font-weight: 700;
-            letter-spacing: 3px;
-            text-align: center;
-            padding: 0.5rem;
-            border: 2px dashed #999;
+            padding: 0.4rem 0.7rem;
             border-radius: 10px;
-            margin-bottom: 0.5rem;
+            margin-bottom: 0.4rem;
+            font-size: 0.95rem;
+            background: #FFFFFF;
+            border: 2px solid var(--ink);
+            box-shadow: 3px 3px 0 rgba(32,27,46,0.25);
         }
+        .guess-row:nth-child(odd) { transform: rotate(-0.6deg); }
+        .guess-row:nth-child(even) { transform: rotate(0.6deg); }
+        .guess-correct { border-color: var(--grass); background: #EAFBF1; }
+        .guess-wrong { border-color: var(--coral); background: #FFF1F0; }
+
+        /* Room code shown as a rotated name-badge sticker, with little
+           washi-tape corners for a scrapbook feel */
+        .room-code {
+            position: relative;
+            display: inline-block;
+            font-size: 1.7rem;
+            font-weight: 800;
+            letter-spacing: 4px;
+            text-align: center;
+            padding: 0.55rem 1.4rem;
+            background: var(--sunny);
+            border: 3px solid var(--ink);
+            border-radius: 14px;
+            box-shadow: 5px 5px 0 var(--ink);
+            transform: rotate(-2deg);
+            margin: 0.3rem 0 1rem 0;
+        }
+        .room-code::before, .room-code::after {
+            content: "";
+            position: absolute;
+            width: 34px; height: 14px;
+            background: rgba(61, 180, 242, 0.55);
+            border: 1px solid rgba(32,27,46,0.3);
+            top: -10px;
+        }
+        .room-code::before { left: -6px; transform: rotate(-25deg); }
+        .room-code::after { right: -6px; transform: rotate(25deg); }
+
+        /* Score chips */
+        .score-chip {
+            display: inline-block;
+            font-weight: 700;
+            font-size: 0.85rem;
+            padding: 0.25rem 0.8rem;
+            margin: 0 0.35rem 0.35rem 0;
+            border-radius: 999px;
+            border: 2px solid var(--ink);
+            box-shadow: 2px 2px 0 var(--ink);
+            color: var(--ink);
+        }
+
+        /* Role badge next to the player's name */
+        .role-badge {
+            display: inline-block;
+            font-weight: 700;
+            font-size: 0.9rem;
+            padding: 0.15rem 0.7rem;
+            border-radius: 999px;
+            border: 2px solid var(--ink);
+            margin-left: 0.4rem;
+        }
+
+        /* Playful alert banners instead of the flat default look */
+        div[data-testid="stAlert"] {
+            border: 2.5px solid var(--ink) !important;
+            border-radius: 14px !important;
+            box-shadow: 4px 4px 0 rgba(32,27,46,0.25);
+            font-family: 'Quicksand', sans-serif;
+        }
+
+        /* Folder-tab style for the lobby's Create/Join tabs */
+        button[data-baseweb="tab"] {
+            font-family: 'Baloo 2', sans-serif;
+            font-weight: 700;
+            border-radius: 10px 10px 0 0 !important;
+        }
+        div[data-baseweb="tab-highlight"] {
+            background-color: var(--sky) !important;
+            height: 4px !important;
+        }
+
+        /* Metric cards on the game-over screen */
+        div[data-testid="stMetric"] {
+            background: #FFFFFF;
+            border: 2.5px solid var(--ink);
+            border-radius: 14px;
+            padding: 0.6rem 0.4rem;
+            box-shadow: 4px 4px 0 var(--ink);
+        }
+
         /* Shrink everything a bit further on narrow / mobile screens */
         @media (max-width: 640px) {
             .block-container { padding-left: 0.6rem; padding-right: 0.6rem; }
-            h1 { font-size: 1.4rem !important; }
-            h2 { font-size: 1.15rem !important; }
-            h3 { font-size: 1.0rem !important; }
-            .room-code { font-size: 1.3rem; }
-            .stButton > button { font-size: 0.95rem; padding: 0.55rem 0.8rem; }
+            h1 { font-size: 1.5rem !important; }
+            h2 { font-size: 1.2rem !important; }
+            h3 { font-size: 1.05rem !important; }
+            .room-code { font-size: 1.25rem; padding: 0.45rem 1rem; letter-spacing: 3px; }
+            .stButton > button { font-size: 1rem; padding: 0.6rem 0.8rem; }
         }
         canvas { max-width: 100% !important; }
+
+        @media (prefers-reduced-motion: reduce) {
+            * { transition: none !important; animation: none !important; }
+        }
         </style>
         """,
         unsafe_allow_html=True,
     )
+
+
+PLAYER_COLORS = ["var(--sky)", "var(--grape)", "var(--sunny)", "var(--grass)", "var(--coral)"]
+
+
+def render_scoreboard(scores: dict) -> None:
+    if not scores:
+        return
+    chips = "".join(
+        f'<span class="score-chip" style="background:{PLAYER_COLORS[i % len(PLAYER_COLORS)]}">'
+        f'{name}: {points}</span>'
+        for i, (name, points) in enumerate(scores.items())
+    )
+    st.markdown(f"<div>{chips}</div>", unsafe_allow_html=True)
 
 
 # --------------------------------------------------------------------------- #
@@ -127,12 +291,20 @@ def get_connection() -> sqlite3.Connection:
             guesser_name TEXT,
             drawing      TEXT,
             guesses      TEXT DEFAULT '[]',
+            scores       TEXT DEFAULT '{}',
             round_num    INTEGER DEFAULT 1,
             status       TEXT DEFAULT 'waiting',
+            won_at       TEXT,
             created_at   TEXT
         )
         """
     )
+    # Migrate DB files created by older versions of this app.
+    existing_cols = {row[1] for row in conn.execute("PRAGMA table_info(rooms)").fetchall()}
+    if "scores" not in existing_cols:
+        conn.execute("ALTER TABLE rooms ADD COLUMN scores TEXT DEFAULT '{}'")
+    if "won_at" not in existing_cols:
+        conn.execute("ALTER TABLE rooms ADD COLUMN won_at TEXT")
     conn.commit()
     return conn
 
@@ -150,8 +322,8 @@ def create_room(room_id: str, artist_name: str) -> None:
             """
             INSERT OR REPLACE INTO rooms
                 (room_id, word, artist_name, guesser_name, drawing, guesses,
-                 round_num, status, created_at)
-            VALUES (?, NULL, ?, NULL, NULL, '[]', 1, 'waiting', ?)
+                 scores, round_num, status, won_at, created_at)
+            VALUES (?, NULL, ?, NULL, NULL, '[]', '{}', 1, 'waiting', NULL, ?)
             """,
             (room_id, artist_name, datetime.utcnow().isoformat()),
         )
@@ -172,16 +344,17 @@ def load_room(room_id: str) -> dict | None:
     conn = get_connection()
     row = conn.execute(
         """SELECT room_id, word, artist_name, guesser_name, drawing, guesses,
-                  round_num, status, created_at
+                  scores, round_num, status, won_at, created_at
            FROM rooms WHERE room_id = ?""",
         (room_id,),
     ).fetchone()
     if row is None:
         return None
     keys = ["room_id", "word", "artist_name", "guesser_name", "drawing",
-            "guesses", "round_num", "status", "created_at"]
+            "guesses", "scores", "round_num", "status", "won_at", "created_at"]
     data = dict(zip(keys, row))
     data["guesses"] = json.loads(data["guesses"] or "[]")
+    data["scores"] = json.loads(data["scores"] or "{}")
     return data
 
 
@@ -211,40 +384,70 @@ def submit_guess(room_id: str, player: str, text: str, correct: bool) -> None:
     conn = get_connection()
     with _DB_LOCK:
         row = conn.execute(
-            "SELECT guesses FROM rooms WHERE room_id = ?", (room_id,)
+            "SELECT guesses, scores FROM rooms WHERE room_id = ?", (room_id,)
         ).fetchone()
         guesses = json.loads(row[0] or "[]")
+        scores = json.loads(row[1] or "{}")
         guesses.append({
             "player": player,
             "text": text,
             "correct": correct,
             "time": datetime.utcnow().strftime("%H:%M:%S"),
         })
-        new_status = "won" if correct else "active"
-        conn.execute(
-            "UPDATE rooms SET guesses = ?, status = ? WHERE room_id = ?",
-            (json.dumps(guesses), new_status, room_id),
-        )
+        if correct:
+            scores[player] = scores.get(player, 0) + 1
+            conn.execute(
+                """UPDATE rooms
+                   SET guesses = ?, scores = ?, status = 'won', won_at = ?
+                   WHERE room_id = ?""",
+                (json.dumps(guesses), json.dumps(scores), datetime.utcnow().isoformat(), room_id),
+            )
+        else:
+            conn.execute(
+                "UPDATE rooms SET guesses = ?, status = 'active' WHERE room_id = ?",
+                (json.dumps(guesses), room_id),
+            )
         conn.commit()
 
 
-def next_round(room_id: str, round_num: int) -> None:
-    """Start the next round AND swap who's drawing vs. guessing.
+def advance_or_finish(room_id: str, round_num: int) -> None:
+    """Automatically move on from a won round: swap artist/guesser and start
+    the next round, or end the game if that was the last one.
 
-    The SET clauses below all read the row's values from before this
-    UPDATE ran (SQLite evaluates every right-hand side against the
-    original row), so this is a true swap, not a copy.
+    Guarded with ``WHERE status = 'won'`` so that if both players' browsers
+    happen to trigger this at the same moment, only the first one actually
+    changes anything — the second becomes a harmless no-op.
     """
+    conn = get_connection()
+    next_num = round_num + 1
+    with _DB_LOCK:
+        if next_num > TOTAL_ROUNDS:
+            conn.execute(
+                "UPDATE rooms SET status = 'finished' WHERE room_id = ? AND status = 'won'",
+                (room_id,),
+            )
+        else:
+            conn.execute(
+                """UPDATE rooms
+                   SET artist_name = guesser_name,
+                       guesser_name = artist_name,
+                       word = NULL, drawing = NULL, guesses = '[]',
+                       round_num = ?, status = 'waiting', won_at = NULL
+                   WHERE room_id = ? AND status = 'won'""",
+                (next_num, room_id),
+            )
+        conn.commit()
+
+
+def reset_game(room_id: str) -> None:
     conn = get_connection()
     with _DB_LOCK:
         conn.execute(
             """UPDATE rooms
-               SET artist_name = guesser_name,
-                   guesser_name = artist_name,
-                   word = NULL, drawing = NULL, guesses = '[]',
-                   round_num = ?, status = 'waiting'
+               SET word = NULL, drawing = NULL, guesses = '[]', scores = '{}',
+                   round_num = 1, status = 'waiting', won_at = NULL
                WHERE room_id = ?""",
-            (round_num, room_id),
+            (room_id,),
         )
         conn.commit()
 
@@ -278,7 +481,7 @@ def data_url_to_image(data_url: str) -> Image.Image:
 
 def lobby_screen() -> None:
     st.title("✏️ Doodle Duel")
-    st.caption("One player draws, the other guesses — live, in real time.")
+    st.caption(f"One player draws, the other guesses — {ROUNDS_PER_PLAYER} rounds each, roles swap automatically.")
 
     with st.sidebar:
         st.subheader("How to play on two devices")
@@ -289,8 +492,12 @@ def lobby_screen() -> None:
             "2. Open the app URL on **both** devices.\n"
             "3. One player creates a room and shares the 5-character code.\n"
             "4. The other player joins with that code.\n"
-            "5. The artist draws, the guesser types guesses — both screens "
-            "update automatically every couple of seconds."
+            "5. The artist picks from 3 random word suggestions (famous "
+            "people, movie characters, and cartoon icons) and draws; the "
+            "guesser types guesses live.\n"
+            f"6. After each correct guess, roles swap automatically. The "
+            f"game runs {TOTAL_ROUNDS} rounds total ({ROUNDS_PER_PLAYER} as "
+            "artist for each player), then shows the final score."
         )
 
     tab_create, tab_join = st.tabs(["🎨 Create a room (Artist)", "🔍 Join a room (Guesser)"])
@@ -338,7 +545,7 @@ def lobby_screen() -> None:
 
 def artist_screen(room: dict) -> None:
     st.markdown(f"<div class='room-code'>{room['room_id']}</div>", unsafe_allow_html=True)
-    st.caption("Share this code with the other player so they can join.")
+    st.caption(f"Round {room['round_num']} of {TOTAL_ROUNDS} · share this code so the other player can join.")
 
     if room["status"] == "waiting" or not room["word"]:
         st.subheader("Pick a word to draw")
@@ -348,17 +555,13 @@ def artist_screen(room: dict) -> None:
 
         cols = st.columns(3)
         for i, w in enumerate(st.session_state.word_options):
-            if cols[i].button(w.capitalize(), key=f"word_{w}_{room['round_num']}"):
+            if cols[i].button(w, key=f"word_{w}_{room['round_num']}"):
                 start_round(room["room_id"], w)
                 st.rerun()
 
-        custom = st.text_input("...or type your own word", key=f"custom_word_{room['round_num']}")
-        if st.button("Use my word", key=f"btn_custom_word_{room['round_num']}"):
-            if custom.strip():
-                start_round(room["room_id"], custom.strip().lower())
-                st.rerun()
-            else:
-                st.error("Type a word first.")
+        if st.button("🔀 Shuffle suggestions", key=f"shuffle_{room['round_num']}"):
+            st.session_state.word_options = random.sample(WORD_BANK, 3)
+            st.rerun()
         return
 
     st.subheader(f"Your secret word: **{room['word']}**")
@@ -409,6 +612,7 @@ def artist_screen(room: dict) -> None:
 
 def guesser_screen(room: dict) -> None:
     st.markdown(f"<div class='room-code'>{room['room_id']}</div>", unsafe_allow_html=True)
+    st.caption(f"Round {room['round_num']} of {TOTAL_ROUNDS}")
 
     if room["status"] == "waiting" or not room["word"]:
         st.info("Waiting for the artist to pick a word and start drawing…")
@@ -429,6 +633,8 @@ def guesser_screen(room: dict) -> None:
         if submitted and guess_text.strip():
             correct = guess_text.strip().lower() == (room["word"] or "").strip().lower()
             submit_guess(room["room_id"], st.session_state.player_name, guess_text.strip(), correct)
+            if correct:
+                st.balloons()
             st.rerun()
     else:
         render_won_banner(room)
@@ -458,22 +664,65 @@ def render_guess_list(guesses: list) -> None:
 
 
 def render_won_banner(room: dict) -> None:
-    """Shown to both players once the word is guessed. Either one can advance
-    to the next round — doing so swaps who draws and who guesses."""
+    """Shown to both players once the word is guessed. The next round starts
+    on its own after a short pause — and roles swap automatically."""
     winner = next((g["player"] for g in room["guesses"] if g["correct"]), room["guesser_name"])
     next_artist = room["guesser_name"]  # whoever guessed correctly draws next
     st.success(f"🎉 {winner} guessed it — the word was **{room['word']}**!")
-    st.caption(f"Next round, **{next_artist}** will draw and **{room['artist_name']}** will guess.")
-    if st.button("Start next round (swap roles)", key=f"next_round_{room['room_id']}_{room['round_num']}"):
-        next_round(room["room_id"], room["round_num"] + 1)
+
+    elapsed = AUTO_ADVANCE_SECONDS
+    if room.get("won_at"):
+        elapsed = (datetime.utcnow() - datetime.fromisoformat(room["won_at"])).total_seconds()
+    remaining = max(0, round(AUTO_ADVANCE_SECONDS - elapsed))
+
+    is_last_round = room["round_num"] >= TOTAL_ROUNDS
+    if is_last_round:
+        st.caption(f"That was the last round — final scores in {remaining}s…")
+    else:
+        st.caption(f"Next up, **{next_artist}** draws and **{room['artist_name']}** guesses — starting in {remaining}s…")
+
+    if elapsed >= AUTO_ADVANCE_SECONDS:
+        advance_or_finish(room["room_id"], room["round_num"])
         st.session_state.pop("last_saved_drawing", None)
         st.rerun()
+
+
+def render_game_over(room: dict) -> None:
+    st.markdown(f"<div class='room-code'>{room['room_id']}</div>", unsafe_allow_html=True)
+    st.title("🏁 Game over!")
+
+    if st.session_state.get("celebrated_finish") != room["room_id"]:
+        st.balloons()
+        st.session_state["celebrated_finish"] = room["room_id"]
+
+    players = sorted({room["artist_name"], room["guesser_name"]} - {None})
+    scores = room["scores"]
+    cols = st.columns(len(players)) if players else []
+    for col, p in zip(cols, players):
+        col.metric(p, scores.get(p, 0))
+
+    if len(players) == 2:
+        s0, s1 = scores.get(players[0], 0), scores.get(players[1], 0)
+        if s0 > s1:
+            st.success(f"🏆 **{players[0]}** wins!")
+        elif s1 > s0:
+            st.success(f"🏆 **{players[1]}** wins!")
+        else:
+            st.info("🤝 It's a tie!")
+
+    if st.button("🔁 Play again (same room, same players)"):
+        reset_game(room["room_id"])
+        for k in ("last_saved_drawing", "word_options", "word_options_round", "celebrated_finish"):
+            st.session_state.pop(k, None)
+        st.rerun()
+
+    st_autorefresh(interval=3000, key=f"gameover_refresh_{room['room_id']}")
 
 
 def leave_room_button() -> None:
     if st.button("⬅️ Leave room"):
         for k in ("room_id", "role", "player_name", "last_saved_drawing",
-                  "word_options", "word_options_round"):
+                  "word_options", "word_options_round", "celebrated_finish"):
             st.session_state.pop(k, None)
         st.rerun()
 
@@ -496,6 +745,13 @@ def main() -> None:
         leave_room_button()
         return
 
+    if room["status"] == "finished":
+        top_left, top_right = st.columns([3, 1])
+        with top_right:
+            leave_room_button()
+        render_game_over(room)
+        return
+
     # Roles can swap after each round, so figure out this client's CURRENT
     # role from the shared room state rather than trusting whatever role
     # they joined as.
@@ -510,8 +766,14 @@ def main() -> None:
 
     top_left, top_right = st.columns([3, 1])
     with top_left:
-        st.write(f"Playing as **{name}** "
-                 f"({'Artist ✏️' if current_role == 'artist' else 'Guesser 🔍'})")
+        role_color = "var(--sky)" if current_role == "artist" else "var(--grape)"
+        role_label = "Artist ✏️" if current_role == "artist" else "Guesser 🔍"
+        st.markdown(
+            f"Playing as **{name}** "
+            f'<span class="role-badge" style="background:{role_color}">{role_label}</span>',
+            unsafe_allow_html=True,
+        )
+        render_scoreboard(room["scores"])
     with top_right:
         leave_room_button()
 

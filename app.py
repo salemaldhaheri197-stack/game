@@ -229,11 +229,19 @@ def submit_guess(room_id: str, player: str, text: str, correct: bool) -> None:
 
 
 def next_round(room_id: str, round_num: int) -> None:
+    """Start the next round AND swap who's drawing vs. guessing.
+
+    The SET clauses below all read the row's values from before this
+    UPDATE ran (SQLite evaluates every right-hand side against the
+    original row), so this is a true swap, not a copy.
+    """
     conn = get_connection()
     with _DB_LOCK:
         conn.execute(
             """UPDATE rooms
-               SET word = NULL, drawing = NULL, guesses = '[]',
+               SET artist_name = guesser_name,
+                   guesser_name = artist_name,
+                   word = NULL, drawing = NULL, guesses = '[]',
                    round_num = ?, status = 'waiting'
                WHERE room_id = ?""",
             (round_num, room_id),
@@ -377,6 +385,7 @@ def artist_screen(room: dict) -> None:
         drawing_mode="freedraw",
         key=f"canvas_{room['room_id']}_{room['round_num']}",
         update_streamlit=True,
+        return_image_data=True,
     )
 
     if canvas_result.image_data is not None:
@@ -389,12 +398,7 @@ def artist_screen(room: dict) -> None:
     render_guess_list(room["guesses"])
 
     if room["status"] == "won":
-        winner = next((g["player"] for g in room["guesses"] if g["correct"]), room["guesser_name"])
-        st.success(f"🎉 {winner} guessed it — the word was **{room['word']}**!")
-        if st.button("Start a new round"):
-            next_round(room["room_id"], room["round_num"] + 1)
-            st.session_state.pop("last_saved_drawing", None)
-            st.rerun()
+        render_won_banner(room)
 
     st_autorefresh(interval=2000, key=f"artist_refresh_{room['room_id']}")
 
@@ -427,7 +431,7 @@ def guesser_screen(room: dict) -> None:
             submit_guess(room["room_id"], st.session_state.player_name, guess_text.strip(), correct)
             st.rerun()
     else:
-        st.success(f"🎉 The word was **{room['word']}**! Waiting for the artist to start a new round…")
+        render_won_banner(room)
 
     st.markdown("#### Guesses so far")
     render_guess_list(room["guesses"])
@@ -451,6 +455,19 @@ def render_guess_list(guesses: list) -> None:
             f"{g['text']} <span style='color:#888;font-size:0.8rem;'>({g['time']})</span></div>",
             unsafe_allow_html=True,
         )
+
+
+def render_won_banner(room: dict) -> None:
+    """Shown to both players once the word is guessed. Either one can advance
+    to the next round — doing so swaps who draws and who guesses."""
+    winner = next((g["player"] for g in room["guesses"] if g["correct"]), room["guesser_name"])
+    next_artist = room["guesser_name"]  # whoever guessed correctly draws next
+    st.success(f"🎉 {winner} guessed it — the word was **{room['word']}**!")
+    st.caption(f"Next round, **{next_artist}** will draw and **{room['artist_name']}** will guess.")
+    if st.button("Start next round (swap roles)", key=f"next_round_{room['room_id']}_{room['round_num']}"):
+        next_round(room["room_id"], room["round_num"] + 1)
+        st.session_state.pop("last_saved_drawing", None)
+        st.rerun()
 
 
 def leave_room_button() -> None:
@@ -479,14 +496,26 @@ def main() -> None:
         leave_room_button()
         return
 
+    # Roles can swap after each round, so figure out this client's CURRENT
+    # role from the shared room state rather than trusting whatever role
+    # they joined as.
+    name = st.session_state.player_name
+    if name == room["artist_name"]:
+        current_role = "artist"
+    elif room["guesser_name"] and name == room["guesser_name"]:
+        current_role = "guesser"
+    else:
+        current_role = st.session_state.role  # fallback, shouldn't normally hit
+    st.session_state.role = current_role
+
     top_left, top_right = st.columns([3, 1])
     with top_left:
-        st.write(f"Playing as **{st.session_state.player_name}** "
-                 f"({'Artist' if st.session_state.role == 'artist' else 'Guesser'})")
+        st.write(f"Playing as **{name}** "
+                 f"({'Artist ✏️' if current_role == 'artist' else 'Guesser 🔍'})")
     with top_right:
         leave_room_button()
 
-    if st.session_state.role == "artist":
+    if current_role == "artist":
         artist_screen(room)
     else:
         guesser_screen(room)
